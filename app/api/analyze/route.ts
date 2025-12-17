@@ -36,11 +36,11 @@ export async function POST(req: Request) {
 
     }
 
-    if (body.verbs.length > 50) {
+    if (body.verbs.length > 100) {
 
       return NextResponse.json(
 
-        { error: "動詞は50個以下にしてください" },
+        { error: "動詞は100個以下にしてください" },
 
         { status: 400 }
 
