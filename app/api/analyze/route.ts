@@ -8,18 +8,29 @@ import { SYSTEM_PROMPT, buildUserPrompt } from "@/lib/prompts";
 
 
 
+const JSON_ONLY_SYSTEM_PROMPT = `${SYSTEM_PROMPT}
+
+【重要：出力形式の厳格な制約】
+
+- 出力はJSON形式のみ許可します
+- 文章・説明・Markdown・コードブロックは一切禁止です
+- JSONの前後に文字列・説明文・コメントを付けることは禁止です
+- 出力は必ず { で始まり } で終わるJSONオブジェクトのみです
+- この形式以外の出力は一切禁止です
+`;
+
+
+
 export async function POST(req: Request) {
 
   try {
 
     const body = (await req.json()) as {
-
       verbs: string[];
-
       skills: string[];
-
       interests?: string[];
-
+      experienceText?: string;
+      followupAnswers?: { q: string; a: string }[];
     };
 
 
@@ -80,6 +91,10 @@ export async function POST(req: Request) {
 
       recommendedJobs: rec,
 
+      experienceText: body.experienceText || "",
+
+      followupAnswers: body.followupAnswers || [],
+
     });
 
 
@@ -118,13 +133,15 @@ export async function POST(req: Request) {
 
         messages: [
 
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: JSON_ONLY_SYSTEM_PROMPT },
 
-          { role: "user", content: userPrompt },
+          { role: "user", content: `${userPrompt}\n\n【重要】出力はJSONのみです。このJSON以外の形式は一切禁止です。JSONの前後に文字列を付けないでください。` },
 
         ],
 
         temperature: 0.7,
+
+        response_format: { type: "json_object" },
 
       }),
 
@@ -132,13 +149,57 @@ export async function POST(req: Request) {
 
 
 
-    const data = await resp.json();
+    if (!resp.ok) {
+
+      const errorData = await resp.text();
+
+      console.error("OpenAI API error:", errorData);
+
+      return NextResponse.json(
+
+        { error: "OpenAI API呼び出しに失敗しました", raw: errorData },
+
+        { status: 500 }
+
+      );
+
+    }
+
+
+
+    // response.text()で受けてからJSON.parse()する
+
+    const responseText = await resp.text();
+
+    let data: any;
+
+    try {
+
+      data = JSON.parse(responseText);
+
+    } catch (e) {
+
+      console.error("OpenAI API response is not JSON:", responseText);
+
+      return NextResponse.json(
+
+        { error: "OpenAI API response is not valid JSON", raw: responseText },
+
+        { status: 500 }
+
+      );
+
+    }
+
+
 
     const content = data?.choices?.[0]?.message?.content;
 
 
 
     if (!content) {
+
+      console.error("AI output is empty, raw data:", data);
 
       return NextResponse.json(
 
@@ -152,19 +213,21 @@ export async function POST(req: Request) {
 
 
 
-    let parsed: any = null;
+    // テキストからJSON部分を抽出（最初の{から最後の}まで）
 
-    try {
+    const firstBrace = content.indexOf("{");
 
-      parsed = JSON.parse(content);
+    const lastBrace = content.lastIndexOf("}");
 
-    } catch {
 
-      // 想定外の出力のときデバッグしやすいように生のcontentも返す
+
+    if (firstBrace === -1 || lastBrace === -1 || firstBrace >= lastBrace) {
+
+      console.error("AI raw output (no JSON found):", content);
 
       return NextResponse.json(
 
-        { error: "AI出力がJSONとして解析できません", content },
+        { error: "AI output is not valid JSON", raw: content },
 
         { status: 500 }
 
@@ -174,15 +237,159 @@ export async function POST(req: Request) {
 
 
 
+    const jsonText = content.slice(firstBrace, lastBrace + 1);
+
+
+
+    let parsed: any = null;
+
+    try {
+
+      parsed = JSON.parse(jsonText);
+
+    } catch (parseError) {
+
+      console.error("AI raw output (JSON parse failed):", content);
+
+      console.error("Extracted JSON text:", jsonText);
+
+      console.error("Parse error:", parseError);
+
+      return NextResponse.json(
+
+        { error: "AI output is not valid JSON", raw: content },
+
+        { status: 500 }
+
+      );
+
+    }
+
+
+
+    // 既存のUI互換性のため、新しい形式から既存の形式に変換
+
+    const transformed: any = {
+
+      clt_summary: {
+
+        ratio: parsed.cltRatio || { C: clt.ratio.C, L: clt.ratio.L, T: clt.ratio.T },
+
+        tendency_text: parsed.summary || "",
+
+        evidence_verbs: [] as string[],
+
+      },
+
+      recommended: (parsed.recommendedJobs || []).map((job: any) => ({
+
+        job: job.job || "",
+
+        industries: job.industries || [],
+
+        why_fit: job.reason || "",
+
+        job_description: "",
+
+      })),
+
+      skills: {
+
+        universal: [] as string[],
+
+        differentiators: [] as string[],
+
+        certifications_examples: (parsed.recommendedJobs?.[0]?.qualifications || []) as string[],
+
+      },
+
+      strengths_weaknesses: {
+
+        strengths: {
+
+          interpersonal: [] as string[],
+
+          thinking: [] as string[],
+
+          action: [] as string[],
+
+        },
+
+        weaknesses: {
+
+          interpersonal: [] as string[],
+
+          thinking: [] as string[],
+
+          action: [] as string[],
+
+        },
+
+        tips: [] as string[],
+
+      },
+
+      experience_insights: (parsed.experienceInsights || []) as any[],
+
+    };
+
+
+
+    // strengthsとweaknessesを配列から分割
+
+    if (Array.isArray(parsed.strengths)) {
+
+      // 配列を3つに分割（対人・思考・行動）
+
+      const third = Math.ceil(parsed.strengths.length / 3);
+
+      transformed.strengths_weaknesses.strengths.interpersonal = parsed.strengths.slice(0, third);
+
+      transformed.strengths_weaknesses.strengths.thinking = parsed.strengths.slice(third, third * 2);
+
+      transformed.strengths_weaknesses.strengths.action = parsed.strengths.slice(third * 2);
+
+    }
+
+    if (Array.isArray(parsed.weaknesses)) {
+
+      const third = Math.ceil(parsed.weaknesses.length / 3);
+
+      transformed.strengths_weaknesses.weaknesses.interpersonal = parsed.weaknesses.slice(0, third);
+
+      transformed.strengths_weaknesses.weaknesses.thinking = parsed.weaknesses.slice(third, third * 2);
+
+      transformed.strengths_weaknesses.weaknesses.action = parsed.weaknesses.slice(third * 2);
+
+    }
+
+    // recommendedJobsのskillsをskillsに反映
+
+    if (parsed.recommendedJobs && parsed.recommendedJobs.length > 0) {
+
+      const allSkills = parsed.recommendedJobs.flatMap((job: any) => job.skills || []);
+
+      const uniqueSkills = Array.from(new Set(allSkills)) as string[];
+
+      transformed.skills.universal = uniqueSkills.slice(0, Math.ceil(uniqueSkills.length / 2));
+
+      transformed.skills.differentiators = uniqueSkills.slice(Math.ceil(uniqueSkills.length / 2));
+
+    }
+
+
+
     return NextResponse.json({
 
       input: { ...body, clt, recommendedJobs: rec },
 
-      result: parsed,
+      result: transformed,
 
     });
 
   } catch (e: any) {
+
+    console.error("Unexpected error:", e);
 
     return NextResponse.json(
 
@@ -195,4 +402,3 @@ export async function POST(req: Request) {
   }
 
 }
-

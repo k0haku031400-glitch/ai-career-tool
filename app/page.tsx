@@ -80,19 +80,85 @@ const MAX_SELECTION = 100;
 
 export default function Home() {
   const [verbs, setVerbs] = useState<string[]>([]);
+  const [customVerbs, setCustomVerbs] = useState<string[]>([]);
+  const [customVerbInput, setCustomVerbInput] = useState<string>("");
   const [skills, setSkills] = useState<string[]>([]);
   const [interests, setInterests] = useState<string[]>([]);
+  const [experienceText, setExperienceText] = useState<string>("");
+  const [followupQuestions, setFollowupQuestions] = useState<{ id: string; q: string; a: string }[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingFollowup, setLoadingFollowup] = useState(false);
   const [response, setResponse] = useState<ApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const isMobile = useMediaQuery("(max-width: 480px)");
-  const selectedCount = verbs.length;
+  const allVerbs = [...verbs, ...customVerbs];
+  const selectedCount = allVerbs.length;
 
-  const toggleVerb = (v: string) =>
+  const toggleVerb = (v: string) => {
+    if (allVerbs.length >= MAX_SELECTION && !allVerbs.includes(v)) return;
     setVerbs((prev) =>
       prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]
     );
+  };
+
+  const addCustomVerb = () => {
+    const trimmed = customVerbInput.trim();
+    if (!trimmed || trimmed.length < 2) return;
+    if (allVerbs.includes(trimmed)) {
+      setCustomVerbInput("");
+      return;
+    }
+    if (allVerbs.length >= MAX_SELECTION) return;
+    setCustomVerbs((prev) => [...prev, trimmed]);
+    setCustomVerbInput("");
+  };
+
+  const removeCustomVerb = (v: string) => {
+    setCustomVerbs((prev) => prev.filter((x) => x !== v));
+  };
+
+  const handleFollowupGenerate = async () => {
+    if (!experienceText.trim()) {
+      setError("経験を入力してください");
+      return;
+    }
+    setLoadingFollowup(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/followup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          experienceText,
+          selectedVerbs: allVerbs,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "質問生成中にエラーが発生しました");
+      } else {
+        const questions = data.questions || [];
+        setFollowupQuestions(
+          questions.map((q: string, i: number) => ({
+            id: `q-${i}`,
+            q,
+            a: "",
+          }))
+        );
+      }
+    } catch (e: any) {
+      setError(e?.message ?? "ネットワークエラーが発生しました");
+    } finally {
+      setLoadingFollowup(false);
+    }
+  };
+
+  const updateFollowupAnswer = (id: string, answer: string) => {
+    setFollowupQuestions((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, a: answer } : item))
+    );
+  };
 
   const handleSkillsChange = (value: string) =>
     setSkills(
@@ -115,7 +181,7 @@ export default function Home() {
     );
 
   async function submit() {
-    if (verbs.length < 10 || verbs.length > MAX_SELECTION || loading) return;
+    if (allVerbs.length < 10 || allVerbs.length > MAX_SELECTION || loading) return;
     setLoading(true);
     setError(null);
     setResponse(null);
@@ -124,7 +190,15 @@ export default function Home() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ verbs, skills, interests }),
+        body: JSON.stringify({
+          verbs: allVerbs,
+          skills,
+          interests,
+          experienceText,
+          followupAnswers: followupQuestions
+            .filter((item) => item.a.trim())
+            .map((item) => ({ q: item.q, a: item.a })),
+        }),
       });
 
       const data = await res.json();
@@ -446,7 +520,7 @@ export default function Home() {
                                   type="button"
                                   key={verb.id}
                                   onClick={() => toggleVerb(verb.label)}
-                                  disabled={!active && verbs.length >= MAX_SELECTION}
+                                  disabled={!active && allVerbs.length >= MAX_SELECTION}
                                   style={{
                                     padding: "6px 10px",
                                     borderRadius: 999,
@@ -457,11 +531,11 @@ export default function Home() {
                                     color: active ? "#ffffff" : "#333333",
                                     fontSize: isMobile ? "0.72rem" : "0.76rem",
                                     cursor:
-                                      !active && verbs.length >= MAX_SELECTION
+                                      !active && allVerbs.length >= MAX_SELECTION
                                         ? "not-allowed"
                                         : "pointer",
                                     opacity:
-                                      !active && verbs.length >= MAX_SELECTION ? 0.5 : 1,
+                                      !active && allVerbs.length >= MAX_SELECTION ? 0.5 : 1,
                                     transition:
                                       "background 0.15s, color 0.15s, box-shadow 0.15s",
                                     boxShadow: active
@@ -491,6 +565,135 @@ export default function Home() {
               });
             })()}
 
+            {/* 自由入力の動詞を追加 */}
+            <section style={{ marginTop: 20 }}>
+              <h3
+                style={{
+                  fontSize: isMobile ? "0.82rem" : "0.88rem",
+                  fontWeight: 600,
+                  marginBottom: 4,
+                  color: "#c62828",
+                }}
+              >
+                自由入力の動詞を追加
+              </h3>
+              <p
+                style={{
+                  fontSize: isMobile ? "0.68rem" : "0.72rem",
+                  marginBottom: 6,
+                  color: "#777",
+                }}
+              >
+                選択肢にない動詞があれば追加できます（2文字以上、重複不可）
+              </p>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  marginBottom: 12,
+                }}
+              >
+                <input
+                  type="text"
+                  value={customVerbInput}
+                  onChange={(e) => setCustomVerbInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addCustomVerb();
+                    }
+                  }}
+                  placeholder="例：企画する、分析する"
+                  disabled={allVerbs.length >= MAX_SELECTION}
+                  style={{
+                    flex: 1,
+                    padding: "9px 12px",
+                    borderRadius: 999,
+                    border: "1px solid #e0e0e0",
+                    fontSize: isMobile ? "0.75rem" : "0.8rem",
+                    background: "#ffffff",
+                    opacity: allVerbs.length >= MAX_SELECTION ? 0.5 : 1,
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={addCustomVerb}
+                  disabled={
+                    !customVerbInput.trim() ||
+                    customVerbInput.trim().length < 2 ||
+                    allVerbs.includes(customVerbInput.trim()) ||
+                    allVerbs.length >= MAX_SELECTION
+                  }
+                  style={{
+                    padding: "9px 16px",
+                    borderRadius: 999,
+                    border: "none",
+                    background:
+                      allVerbs.length >= MAX_SELECTION ||
+                      !customVerbInput.trim() ||
+                      customVerbInput.trim().length < 2 ||
+                      allVerbs.includes(customVerbInput.trim())
+                        ? "#ffcdd2"
+                        : "#c62828",
+                    color: "#ffffff",
+                    fontSize: isMobile ? "0.75rem" : "0.8rem",
+                    fontWeight: 600,
+                    cursor:
+                      allVerbs.length >= MAX_SELECTION ||
+                      !customVerbInput.trim() ||
+                      customVerbInput.trim().length < 2 ||
+                      allVerbs.includes(customVerbInput.trim())
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
+                >
+                  追加
+                </button>
+              </div>
+              {customVerbs.length > 0 && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 8,
+                  }}
+                >
+                  {customVerbs.map((v) => (
+                    <div
+                      key={v}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "6px 10px",
+                        borderRadius: 999,
+                        border: "1px solid #c62828",
+                        background: "#fff5f5",
+                        fontSize: isMobile ? "0.72rem" : "0.76rem",
+                      }}
+                    >
+                      <span>{v}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeCustomVerb(v)}
+                        style={{
+                          marginLeft: 4,
+                          padding: "2px 6px",
+                          border: "none",
+                          background: "transparent",
+                          color: "#c62828",
+                          cursor: "pointer",
+                          fontSize: "0.9rem",
+                          fontWeight: 700,
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
 
             {/* 資格・スキル */}
             <section style={{ marginTop: 16 }}>
@@ -564,12 +767,102 @@ export default function Home() {
               />
             </section>
 
+            {/* 過去の経験 */}
+            <section style={{ marginTop: 16 }}>
+              <h3
+                style={{
+                  fontSize: isMobile ? "0.82rem" : "0.88rem",
+                  fontWeight: 600,
+                  marginBottom: 4,
+                  color: "#c62828",
+                }}
+              >
+                過去の経験（必須）
+              </h3>
+              <p
+                style={{
+                  fontSize: isMobile ? "0.68rem" : "0.72rem",
+                  marginBottom: 6,
+                  color: "#777",
+                  lineHeight: 1.5,
+                }}
+              >
+                これまでの経験を具体的に書くほど分析精度が上がります（バイト/部活/留学/趣味/挫折/表彰など）
+              </p>
+              <textarea
+                value={experienceText}
+                onChange={(e) => setExperienceText(e.target.value)}
+                placeholder="例：飲食バイトで新人教育を担当、SNSで発信しフォロワー増、部活で主将、留学準備で英語学習を継続、など"
+                rows={4}
+                style={{
+                  width: "100%",
+                  padding: "9px 12px",
+                  borderRadius: 12,
+                  border: "1px solid #e0e0e0",
+                  fontSize: isMobile ? "0.75rem" : "0.8rem",
+                  background: "#ffffff",
+                  resize: "vertical",
+                  fontFamily: "inherit",
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleFollowupGenerate}
+                disabled={!experienceText.trim() || loadingFollowup}
+                style={{
+                  marginTop: 8,
+                  padding: "8px 16px",
+                  borderRadius: 999,
+                  border: "1px solid #c62828",
+                  background: loadingFollowup || !experienceText.trim() ? "#ffcdd2" : "#ffffff",
+                  color: "#c62828",
+                  fontSize: isMobile ? "0.75rem" : "0.8rem",
+                  fontWeight: 600,
+                  cursor: loadingFollowup || !experienceText.trim() ? "not-allowed" : "pointer",
+                }}
+              >
+                {loadingFollowup ? "生成中..." : "AIに深掘り質問を作ってもらう"}
+              </button>
+              {followupQuestions.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  {followupQuestions.map((item) => (
+                    <div key={item.id} style={{ marginBottom: 12 }}>
+                      <p
+                        style={{
+                          fontSize: isMobile ? "0.72rem" : "0.78rem",
+                          fontWeight: 600,
+                          marginBottom: 4,
+                          color: "#333",
+                        }}
+                      >
+                        {item.q}
+                      </p>
+                      <input
+                        type="text"
+                        value={item.a}
+                        onChange={(e) => updateFollowupAnswer(item.id, e.target.value)}
+                        placeholder="回答を入力（任意）"
+                        style={{
+                          width: "100%",
+                          padding: "8px 12px",
+                          borderRadius: 8,
+                          border: "1px solid #e0e0e0",
+                          fontSize: isMobile ? "0.72rem" : "0.76rem",
+                          background: "#ffffff",
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
             <button
               type="button"
-              disabled={verbs.length < 10 || verbs.length > MAX_SELECTION || loading}
+              disabled={allVerbs.length < 10 || allVerbs.length > MAX_SELECTION || loading}
               onClick={submit}
               style={
-                verbs.length < 10 || verbs.length > MAX_SELECTION || loading
+                allVerbs.length < 10 || allVerbs.length > MAX_SELECTION || loading
                   ? { ...buttonDisabledStyle, width: "100%", marginTop: 16 }
                   : { ...buttonStyle, width: "100%", marginTop: 16 }
               }
@@ -1219,6 +1512,53 @@ export default function Home() {
                   </div>
                 </div>
               </section>
+
+              {/* 経験からの根拠 */}
+              {analysis?.experience_insights &&
+                analysis.experience_insights.length > 0 && (
+                  <section style={{ marginBottom: 20 }}>
+                    <h3
+                      style={{
+                        fontSize: isMobile ? "0.88rem" : "0.95rem",
+                        fontWeight: 600,
+                        marginBottom: 12,
+                        color: "#c62828",
+                      }}
+                    >
+                      経験から読み取れる強み（根拠）
+                    </h3>
+                    <div style={cardStyle}>
+                      <ul
+                        style={{
+                          paddingLeft: 16,
+                          margin: 0,
+                          fontSize: isMobile ? "0.72rem" : "0.78rem",
+                        }}
+                      >
+                        {analysis.experience_insights.map(
+                          (item: any, i: number) => (
+                            <li
+                              key={i}
+                              style={{
+                                marginBottom: 12,
+                                lineHeight: 1.6,
+                                listStyle: "disc",
+                              }}
+                            >
+                              <strong>{item.experience || "経験"}</strong>
+                              {" → "}
+                              {item.insight || "示唆"}
+                              {" → "}
+                              <span style={{ color: "#c62828" }}>
+                                {item.suitable_role || "向く役割"}
+                              </span>
+                            </li>
+                          )
+                        )}
+                      </ul>
+                    </div>
+                  </section>
+                )}
 
               {/* タイプ説明カード（固定） */}
               <section>

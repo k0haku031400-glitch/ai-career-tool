@@ -24,50 +24,35 @@ C/L/Tの傾向を説明し、向いている職業・業種を具体的に提案
 
 - 最後に次の7日アクションは出さなくてよい（出力JSONにも含めない）
 
+- 過去の経験と深掘り回答から読み取れる強みを根拠として必ず引用する
+
 `;
 
 export function buildUserPrompt(params: {
-
   ratio: { C: number; L: number; T: number };
-
   counts: { C: number; L: number; T: number };
-
   selectedVerbs: string[];
-
   selectedByCategory: { C: string[]; L: string[]; T: string[] };
-
   skills: string[];
-
   interests?: string[];
-
   recommendedJobs: Array<{
-
     job: string;
-
     industries: string[];
-
     description: string;
-
   }>;
-
+  experienceText: string;
+  followupAnswers: { q: string; a: string }[];
 }) {
-
   const {
-
     ratio,
-
     counts,
-
     selectedVerbs,
-
     selectedByCategory,
-
     skills,
-
     interests,
-
     recommendedJobs,
-
+    experienceText,
+    followupAnswers,
   } = params;
 
   return `
@@ -89,44 +74,39 @@ export function buildUserPrompt(params: {
 - 資格・スキル: ${skills.join("、")}
 
 - 興味のある職業/業種（任意）: ${
-
     interests && interests.length > 0 ? interests.join("、") : "未回答"
-
   }
+
+- 過去の経験: ${experienceText || "未入力"}
+
+${
+  followupAnswers && followupAnswers.length > 0
+    ? `- 深掘り質問への回答:\n${followupAnswers
+        .map((fa) => `  Q: ${fa.q}\n  A: ${fa.a}`)
+        .join("\n")}`
+    : ""
+}
 
 システム側で算出した「近い職業候補（上位）」:
 
 ${recommendedJobs
-
   .map(
-
     (j, i) =>
-
       `- 候補${i + 1}: ${j.job} / 業種例: ${j.industries.join(
-
         "、"
-
       )} / 概要: ${j.description}`
-
   )
-
   .join("\n")}
 
-出力フォーマット（このJSONで返してください）:
+出力フォーマット（このJSONで返してください。この形式以外は一切禁止です）:
 
 {
 
-  "clt_summary": {
+  "cltRatio": {"C": number, "L": number, "T": number},
 
-    "ratio": {"C": number, "L": number, "T": number},
+  "summary": string,
 
-    "tendency_text": string,
-
-    "evidence_verbs": string[]
-
-  },
-
-  "recommended": [
+  "recommendedJobs": [
 
     {
 
@@ -134,49 +114,33 @@ ${recommendedJobs
 
       "industries": string[],
 
-      "why_fit": string,
+      "reason": string,
 
-      "job_description": string
+      "skills": string[],
+
+      "qualifications": string[]
 
     }
 
   ],
 
-  "skills": {
+  "strengths": string[],
 
-    "universal": string[],              // どの職業にも役立つスキル（例：コミュ力、問題解決力）
+  "weaknesses": string[],
 
-    "differentiators": string[],        // 差別化になるスキル（例：データ分析、戦略思考）
+  "experienceInsights": [
 
-    "certifications_examples": string[] // 具体的な資格名（例：TOEIC○○点、英検準1級、日商簿記2級、基本情報技術者など）
+    {
 
-  },
+      "experience": string,
 
-  "strengths_weaknesses": {
+      "insight": string,
 
-    "strengths": {
+      "suitable_role": string
 
-      "interpersonal": string[],
+    }
 
-      "thinking": string[],
-
-      "action": string[]
-
-    },
-
-    "weaknesses": {
-
-      "interpersonal": string[],
-
-      "thinking": string[],
-
-      "action": string[]
-
-    },
-
-    "tips": string[]
-
-  }
+  ]
 
 }
 
@@ -188,7 +152,12 @@ ${recommendedJobs
 
 - skills.certifications_examples は必ず3〜5件の「具体的な資格名」を含める（スキルではなく資格名）
 
+- experience_insights は過去の経験と深掘り回答から読み取れる強みを3〜6個、それぞれ「経験の具体」→「示唆」→「向く役割」を1行で記述
+
+- 経験からの根拠は「この経験から〜が示唆されます」形式で理由付けを強化
+
+- 職業カードの各項目は200〜300文字以内に収める
+
 `;
 
 }
-
