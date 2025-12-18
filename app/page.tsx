@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
-import { VERB_GROUPS } from "@/data/verbOptions";
+import { VERBS, CATEGORY_INFO, type VerbItem } from "@/data/verbOptions";
+import { JOB_PROFILES } from "@/data/jobs";
 
 type ApiResponse = {
   input: {
@@ -39,6 +40,44 @@ function useMediaQuery(query: string) {
   return matches;
 }
 
+// SectionHeaderコンポーネント
+function SectionHeader({
+  title,
+  description,
+  isMobile,
+}: {
+  title: string;
+  description: string;
+  isMobile: boolean;
+}) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <h3
+        style={{
+          fontSize: isMobile ? "1rem" : "1.1rem",
+          fontWeight: 800,
+          marginBottom: 6,
+          color: "#c62828",
+        }}
+      >
+        {title}
+      </h3>
+      <p
+        style={{
+          fontSize: isMobile ? "0.72rem" : "0.78rem",
+          color: "#666",
+          lineHeight: 1.5,
+          marginBottom: 0,
+        }}
+      >
+        {description}
+      </p>
+    </div>
+  );
+}
+
+const MAX_SELECTION = 100;
+
 export default function Home() {
   const [verbs, setVerbs] = useState<string[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
@@ -48,6 +87,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
 
   const isMobile = useMediaQuery("(max-width: 480px)");
+  const selectedCount = verbs.length;
 
   const toggleVerb = (v: string) =>
     setVerbs((prev) =>
@@ -75,7 +115,7 @@ export default function Home() {
     );
 
   async function submit() {
-    if (verbs.length < 10 || verbs.length > 100 || loading) return;
+    if (verbs.length < 10 || verbs.length > MAX_SELECTION || loading) return;
     setLoading(true);
     setError(null);
     setResponse(null);
@@ -156,8 +196,45 @@ export default function Home() {
         background:
           "linear-gradient(180deg, #ffe5e5 0%, #fff9f9 40%, #ffffff 100%)",
         padding: isMobile ? "12px 8px 32px" : "16px 12px 40px",
+        position: "relative",
       }}
     >
+      {/* 右上固定カウンターバッジ - main直下に配置してstickyを有効化 */}
+      <div
+        style={{
+          position: "sticky",
+          top: isMobile ? 8 : 12,
+          zIndex: 50,
+          display: "flex",
+          justifyContent: isMobile ? "center" : "flex-end",
+          alignItems: "center",
+          pointerEvents: "none",
+          maxWidth: 1080,
+          margin: "0 auto",
+          padding: isMobile ? "8px 12px" : "12px 16px",
+        }}
+      >
+        <div
+          style={{
+            marginLeft: "auto",
+            width: "fit-content",
+            borderRadius: 999,
+            border: "1px solid rgba(254, 202, 202, 1)",
+            background: "rgba(255, 245, 245, 0.9)",
+            padding: "4px 12px",
+            fontSize: "0.875rem",
+            fontWeight: 600,
+            color: "#b91c1c",
+            boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
+            backdropFilter: "blur(4px)",
+            WebkitBackdropFilter: "blur(4px)",
+            pointerEvents: "auto",
+          }}
+        >
+          選択中: {selectedCount} / {MAX_SELECTION}
+        </div>
+      </div>
+
       <div
         style={{
           maxWidth: 1080,
@@ -168,6 +245,7 @@ export default function Home() {
           overflow: "hidden",
         }}
       >
+
         {/* タブバー風ヘッダー */}
         <header
           style={{
@@ -301,75 +379,118 @@ export default function Home() {
                 lineHeight: 1.6,
               }}
             >
-              日常で「楽しい・好き」と感じる行動を選んでください。10〜100個まで選択できます。
+              日常で「楽しい・好き」と感じる行動を選んでください。10〜{MAX_SELECTION}個まで選択できます。
               選択した行動が多いほど精度が上がります。
             </p>
 
-            {VERB_GROUPS.map((group) => (
-              <section key={group.title} style={{ marginTop: 16 }}>
-                <h3
-                  style={{
-                    fontSize: isMobile ? "0.78rem" : "0.82rem",
-                    fontWeight: 600,
-                    marginBottom: 8,
-                    color: "#555",
-                  }}
-                >
-                  {group.title}
-                </h3>
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: 8,
-                  }}
-                >
-                  {group.items.map((v) => {
-                    const active = verbs.includes(v);
-                    return (
-                      <button
-                        type="button"
-                        key={v}
-                        onClick={() => toggleVerb(v)}
-                        style={{
-                          padding: "6px 10px",
-                          borderRadius: 999,
-                          border: active
-                            ? "1px solid #c62828"
-                            : "1px solid #e0e0e0",
-                          background: active ? "#c62828" : "#ffffff",
-                          color: active ? "#ffffff" : "#333333",
-                          fontSize: isMobile ? "0.72rem" : "0.76rem",
-                          cursor: "pointer",
-                          transition:
-                            "background 0.15s, color 0.15s, box-shadow 0.15s",
-                          boxShadow: active
-                            ? "0 2px 6px rgba(198,40,40,0.4)"
-                            : "none",
-                        }}
-                      >
-                        {v}
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
+            {(() => {
+              // カテゴリごとにグループ化
+              const categories = Array.from(
+                new Set(VERBS.map((v) => v.category))
+              );
+              
+              // 開発時のみカテゴリ/サブカテゴリの件数をログ出力
+              if (process.env.NODE_ENV !== "production") {
+                const categoryCounts: Record<string, Record<string, number>> = {};
+                VERBS.forEach((v) => {
+                  if (!categoryCounts[v.category]) {
+                    categoryCounts[v.category] = {};
+                  }
+                  categoryCounts[v.category][v.subcategory] =
+                    (categoryCounts[v.category][v.subcategory] || 0) + 1;
+                });
+                console.log("カテゴリ/サブカテゴリ件数:", categoryCounts);
+              }
 
-            <div
-              style={{
-                marginTop: 12,
-                fontSize: isMobile ? "0.72rem" : "0.78rem",
-              }}
-            >
-              <strong>選択中：</strong>
-              {verbs.length} / 100{" "}
-              {verbs.length < 10 && (
-                <span style={{ color: "#c62828" }}>
-                  （10個以上選んでください）
-                </span>
-              )}
-            </div>
+              return categories.map((category, categoryIndex) => {
+                const categoryVerbs = VERBS.filter((v) => v.category === category);
+                const subcategories = Array.from(
+                  new Set(categoryVerbs.map((v) => v.subcategory))
+                );
+                const isLastCategory = categoryIndex === categories.length - 1;
+
+                return (
+                  <section key={category} style={{ marginTop: 20 }}>
+                    <SectionHeader
+                      title={category}
+                      description={CATEGORY_INFO[category]?.description || ""}
+                      isMobile={isMobile}
+                    />
+                    {subcategories.map((subcategory) => {
+                      const subcategoryVerbs = categoryVerbs.filter(
+                        (v) => v.subcategory === subcategory
+                      );
+                      return (
+                        <div key={subcategory} style={{ marginBottom: 16 }}>
+                          <h4
+                            style={{
+                              fontSize: isMobile ? "0.75rem" : "0.8rem",
+                              fontWeight: 700,
+                              marginBottom: 8,
+                              color: "#888",
+                            }}
+                          >
+                            {subcategory}
+                          </h4>
+                          <div
+                            style={{
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: 8,
+                            }}
+                          >
+                            {subcategoryVerbs.map((verb) => {
+                              const active = verbs.includes(verb.label);
+                              return (
+                                <button
+                                  type="button"
+                                  key={verb.id}
+                                  onClick={() => toggleVerb(verb.label)}
+                                  disabled={!active && verbs.length >= MAX_SELECTION}
+                                  style={{
+                                    padding: "6px 10px",
+                                    borderRadius: 999,
+                                    border: active
+                                      ? "1px solid #c62828"
+                                      : "1px solid #e0e0e0",
+                                    background: active ? "#c62828" : "#ffffff",
+                                    color: active ? "#ffffff" : "#333333",
+                                    fontSize: isMobile ? "0.72rem" : "0.76rem",
+                                    cursor:
+                                      !active && verbs.length >= MAX_SELECTION
+                                        ? "not-allowed"
+                                        : "pointer",
+                                    opacity:
+                                      !active && verbs.length >= MAX_SELECTION ? 0.5 : 1,
+                                    transition:
+                                      "background 0.15s, color 0.15s, box-shadow 0.15s",
+                                    boxShadow: active
+                                      ? "0 2px 6px rgba(198,40,40,0.4)"
+                                      : "none",
+                                  }}
+                                >
+                                  {verb.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {!isLastCategory && (
+                      <div
+                        style={{
+                          borderBottom: "1px solid rgba(198,40,40,0.25)",
+                          marginTop: isMobile ? 24 : 28,
+                          marginBottom: isMobile ? 24 : 28,
+                        }}
+                      />
+                    )}
+                  </section>
+                );
+              });
+            })()}
+
 
             {/* 資格・スキル */}
             <section style={{ marginTop: 16 }}>
@@ -390,7 +511,7 @@ export default function Home() {
                   color: "#777",
                 }}
               >
-                例：英検2級, TOEIC650, 日商簿記3級, Python, 営業経験
+                例：TOEIC, 営業経験, アルバイト, 
               </p>
               <input
                 type="text"
@@ -445,10 +566,10 @@ export default function Home() {
 
             <button
               type="button"
-              disabled={verbs.length < 10 || verbs.length > 100 || loading}
+              disabled={verbs.length < 10 || verbs.length > MAX_SELECTION || loading}
               onClick={submit}
               style={
-                verbs.length < 10 || verbs.length > 100 || loading
+                verbs.length < 10 || verbs.length > MAX_SELECTION || loading
                   ? { ...buttonDisabledStyle, width: "100%", marginTop: 16 }
                   : { ...buttonStyle, width: "100%", marginTop: 16 }
               }
@@ -739,83 +860,123 @@ export default function Home() {
                       )}
 
                       {/* スキルと資格 */}
-                      {skillsAnalysis && (
-                        <div
-                          style={{
-                            marginTop: 8,
-                            paddingTop: 8,
-                            borderTop: "1px dashed #ffcccc",
-                          }}
-                        >
-                          <p
-                            style={{
-                              fontSize: isMobile ? "0.72rem" : "0.78rem",
-                              fontWeight: 600,
-                              marginBottom: 4,
-                            }}
-                          >
-                            必要なスキルの例
-                          </p>
-                          <ul
-                            style={{
-                              paddingLeft: 16,
-                              margin: 0,
-                              fontSize: isMobile ? "0.7rem" : "0.76rem",
-                            }}
-                          >
-                            {Array.isArray(skillsAnalysis.universal) &&
-                              skillsAnalysis.universal.map(
-                                (s: string, i: number) => (
-                                  <li key={`u-${i}`} style={{ marginBottom: 2 }}>
-                                    【普遍的】{s}
-                                  </li>
-                                )
-                              )}
-                            {Array.isArray(skillsAnalysis.differentiators) &&
-                              skillsAnalysis.differentiators.map(
-                                (s: string, i: number) => (
-                                  <li key={`d-${i}`} style={{ marginBottom: 2 }}>
-                                    【差別化】{s}
-                                  </li>
-                                )
-                              )}
-                          </ul>
+                      {(() => {
+                        // 職業名でJOB_PROFILESからマッチング
+                        const jobProfile = JOB_PROFILES.find(
+                          (p) => p.job === job.job
+                        );
+                        const jobSkills = jobProfile
+                          ? {
+                              skillsCommon: jobProfile.skillsCommon,
+                              skillsDifferentiator: jobProfile.skillsDifferentiator,
+                              certifications: jobProfile.certifications,
+                            }
+                          : null;
 
-                          {Array.isArray(
-                            skillsAnalysis.certifications_examples
-                          ) &&
-                            skillsAnalysis.certifications_examples.length >
-                              0 && (
-                              <>
-                                <p
-                                  style={{
-                                    fontSize: isMobile ? "0.72rem" : "0.78rem",
-                                    fontWeight: 600,
-                                    marginTop: 8,
-                                    marginBottom: 4,
-                                  }}
-                                >
-                                  資格の例
-                                </p>
-                                <ul
-                                  style={{
-                                    paddingLeft: 16,
-                                    margin: 0,
-                                    fontSize: isMobile ? "0.7rem" : "0.76rem",
-                                  }}
-                                >
-                                  {skillsAnalysis.certifications_examples.map(
-                                    (s: string, i: number) => (
-                                      <li key={`c-${i}`} style={{ marginBottom: 2 }}>
-                                        {s}
-                                      </li>
-                                    )
-                                  )}
-                                </ul>
-                              </>
-                            )}
-                        </div>
-                      )}
+                        return jobSkills ? (
+                          <div
+                            style={{
+                              marginTop: 8,
+                              paddingTop: 8,
+                              borderTop: "1px dashed #ffcccc",
+                            }}
+                          >
+                            {jobSkills.skillsCommon &&
+                              jobSkills.skillsCommon.length > 0 && (
+                                <>
+                                  <p
+                                    style={{
+                                      fontSize: isMobile ? "0.72rem" : "0.78rem",
+                                      fontWeight: 600,
+                                      marginBottom: 4,
+                                    }}
+                                  >
+                                    必要なスキル（普遍）
+                                  </p>
+                                  <ul
+                                    style={{
+                                      paddingLeft: 16,
+                                      margin: 0,
+                                      fontSize: isMobile ? "0.7rem" : "0.76rem",
+                                      marginBottom: 8,
+                                    }}
+                                  >
+                                    {jobSkills.skillsCommon.map(
+                                      (s: string, i: number) => (
+                                        <li key={`u-${i}`} style={{ marginBottom: 2 }}>
+                                          {s}
+                                        </li>
+                                      )
+                                    )}
+                                  </ul>
+                                </>
+                              )}
+
+                            {jobSkills.skillsDifferentiator &&
+                              jobSkills.skillsDifferentiator.length > 0 && (
+                                <>
+                                  <p
+                                    style={{
+                                      fontSize: isMobile ? "0.72rem" : "0.78rem",
+                                      fontWeight: 600,
+                                      marginTop: 8,
+                                      marginBottom: 4,
+                                    }}
+                                  >
+                                    必要なスキル（差別化）
+                                  </p>
+                                  <ul
+                                    style={{
+                                      paddingLeft: 16,
+                                      margin: 0,
+                                      fontSize: isMobile ? "0.7rem" : "0.76rem",
+                                      marginBottom: 8,
+                                    }}
+                                  >
+                                    {jobSkills.skillsDifferentiator.map(
+                                      (s: string, i: number) => (
+                                        <li key={`d-${i}`} style={{ marginBottom: 2 }}>
+                                          {s}
+                                        </li>
+                                      )
+                                    )}
+                                  </ul>
+                                </>
+                              )}
+
+                            {jobSkills.certifications &&
+                              jobSkills.certifications.length > 0 && (
+                                <>
+                                  <p
+                                    style={{
+                                      fontSize: isMobile ? "0.72rem" : "0.78rem",
+                                      fontWeight: 600,
+                                      marginTop: 8,
+                                      marginBottom: 4,
+                                    }}
+                                  >
+                                    資格の例
+                                  </p>
+                                  <ul
+                                    style={{
+                                      paddingLeft: 16,
+                                      margin: 0,
+                                      fontSize: isMobile ? "0.7rem" : "0.76rem",
+                                    }}
+                                  >
+                                    {jobSkills.certifications.map(
+                                      (s: string, i: number) => (
+                                        <li key={`c-${i}`} style={{ marginBottom: 2 }}>
+                                          {s}
+                                        </li>
+                                      )
+                                    )}
+                                  </ul>
+                                </>
+                              )}
+                          </div>
+                        ) : null;
+                      })()}
                     </article>
                   ))}
                 </div>
