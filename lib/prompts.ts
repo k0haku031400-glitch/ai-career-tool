@@ -4,13 +4,15 @@ export const SYSTEM_PROMPT = `
 
 ユーザーの「好きな行動（動詞）」と「スキル/資格」と「興味」を材料に、
 
-C/L/Tの傾向を説明し、向いている職業・業種を具体的に提案してください。
+C/L/Tの傾向を説明し、向いている業種を具体的に提案してください。
 
 
 
 重要ルール:
 
-- 断定しすぎない（「傾向」「可能性」「〜になりやすい」）
+- 断定しすぎない（「傾向」「可能性」「〜になりやすい」「選択肢の一つ」という表現を使う）
+
+- 将来の変化を前提とする（「今後の経験次第で」「変化していく可能性がある」）
 
 - 専門用語を避け、大学生にもわかる文章
 
@@ -26,6 +28,10 @@ C/L/Tの傾向を説明し、向いている職業・業種を具体的に提案
 
 - 過去の経験と深掘り回答から読み取れる強みを根拠として必ず引用する
 
+- 業種は抽象度の高いカテゴリ（例：IT・テクノロジー、金融、メーカー・モノづくり）で提示し、具体職種（例：データサイエンティスト、法人営業）は避ける
+
+- matchScoreは業種単位で算出し、職種レベルではスコア計算しない
+
 `;
 
 export function buildUserPrompt(params: {
@@ -35,10 +41,13 @@ export function buildUserPrompt(params: {
   selectedByCategory: { C: string[]; L: string[]; T: string[] };
   skills: string[];
   interests?: string[];
-  recommendedJobs: Array<{
-    job: string;
-    industries: string[];
+  recommendedIndustries: Array<{
+    industry: string;
+    matchScore: number;
     description: string;
+    exampleRoles: string[];
+    skills: string[];
+    qualifications: string[];
   }>;
   experienceText: string;
   followupAnswers: { q: string; a: string }[];
@@ -50,7 +59,7 @@ export function buildUserPrompt(params: {
     selectedByCategory,
     skills,
     interests,
-    recommendedJobs,
+    recommendedIndustries,
     experienceText,
     followupAnswers,
   } = params;
@@ -87,14 +96,12 @@ ${
     : ""
 }
 
-システム側で算出した「近い職業候補（上位）」:
+システム側で算出した「近い業種候補（上位）」:
 
-${recommendedJobs
+${recommendedIndustries
   .map(
-    (j, i) =>
-      `- 候補${i + 1}: ${j.job} / 業種例: ${j.industries.join(
-        "、"
-      )} / 概要: ${j.description}`
+    (ind, i) =>
+      `- 候補${i + 1}: ${ind.industry}（適合度: ${ind.matchScore}%） / 説明: ${ind.description}`
   )
   .join("\n")}
 
@@ -106,19 +113,17 @@ ${recommendedJobs
 
   "summary": string,
 
-  "recommendedJobs": [
+  "recommendedIndustries": [
 
     {
 
-      "job": string,
+      "name": string,
 
-      "industries": string[],
+      "industry": string,
 
-      "reason": string,
+      "matchScore": number,
 
-      "skills": string[],
-
-      "qualifications": string[]
+      "reason": string
 
     }
 
@@ -140,13 +145,43 @@ ${recommendedJobs
 
     }
 
-  ]
+  ],
+
+  "mismatchIndustries": [
+
+    {
+
+      "industry": string,
+
+      "reason": string,
+
+      "solution": {
+
+        "shortTerm": string,
+
+        "mediumTerm": string
+
+      }
+
+    }
+
+  ],
+
+  "actionTips": {
+
+    "C": string,
+
+    "L": string,
+
+    "T": string
+
+  }
 
 }
 
 制約:
 
-- recommended は必ず3〜5件の範囲で出す
+- recommendedIndustries は必ず3件のみ出す（4つ以上は絶対に返さない）。各候補には必ず name（抽象業種名のみ。職種名・役割名は一切使わない。使用可能な業種カテゴリ例：金融、インフラ、IT・デジタル、メーカー、コンサルティング、教育、公共・行政、エネルギー、ヘルスケア、物流・サプライチェーン、小売・サービス、メディア・コンテンツ、不動産、スタートアップ、研究・開発、環境・サステナビリティ）、matchScore（適合度0〜100）、reason（なぜこの業界と相性が良いか2〜3文。CLT比率から読み取れる特性を言語化し、「どんな力が求められやすい業界か」に焦点を当てる。職業を直接連想させない。例：「データをもとに構造を理解し、関係者と調整しながら全体最適を目指す力が求められる業界です。」断定しすぎず「可能性」「向いている傾向」「選択肢の一つ」という表現を使う）を含める。exampleRoles、exampleCompanies、skills、qualificationsは一切生成しない
 
 - evidence_verbs はユーザーの動詞から5〜10個を厳選
 
@@ -156,7 +191,11 @@ ${recommendedJobs
 
 - 経験からの根拠は「この経験から〜が示唆されます」形式で理由付けを強化
 
-- 職業カードの各項目は200〜300文字以内に収める
+- reasonは2〜3文で簡潔に（200〜300文字以内）
+
+- mismatchIndustries は必ず1〜3件の範囲で出す。現時点ではミスマッチになりやすい業種を、否定的になりすぎない表現で提示してください（例：「不向き」ではなく「現時点ではストレスを感じやすい可能性がある業種」）。各業種に理由（reason）と対策（solution）を明記してください。solutionはshortTerm（短期でできる工夫）とmediumTerm（中期で伸ばす力）の2段構成にし、断定しない表現（「〜しない方がいい」ではなく「〜を補うと取り組みやすい」）を使う。理由に対応する対策にする（例：即断即決が苦手 → 短期: 事前に判断基準（優先順位）を決めてから動く、中期: 「結論→理由→次の一手」で話す練習を積む）
+
+- actionTips はC/L/Tそれぞれに1つずつ、抽象的な行動提案を出す。各行動は1行の行動提案 + 1行の補足（なぜ効くか/どうやるか）の形式にする。"趣味"に寄せず、誰でもできる汎用行動にする。例：C「相手の話を"要約して返す"コミュニケーションを増やす / 会話の最後に「つまり〜だよね？」を1回入れるだけでOK」、L「小さな場で"決めて進める"役割を持つ / 目標→担当→期限を1つ決めて共有する習慣をつくる」、T「出来事を"仮説→検証"で振り返る / うまくいった理由を3行で書き、次回の改善案を1つ足す」
 
 `;
 

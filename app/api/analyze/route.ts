@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { calculateCLT } from "@/lib/calculateCLT";
 
-import { recommendJobs } from "@/lib/recommendJobs";
+import { recommendIndustries } from "@/lib/recommendIndustries";
 
 import { SYSTEM_PROMPT, buildUserPrompt } from "@/lib/prompts";
 
@@ -63,13 +63,32 @@ export async function POST(req: Request) {
 
     const clt = calculateCLT(body.verbs);
 
-    const rec = recommendJobs(clt.ratio, 3).map((r) => ({
+    // 必ず3つの業種を推薦（不足する場合は補完）
+    const recBase = recommendIndustries(clt.ratio, 3);
+    
+    // 3つに満たない場合は、C/L/T比率との一致度が高いものから補完
+    const rec = recBase.length < 3
+      ? [
+          ...recBase,
+          ...recommendIndustries(clt.ratio, 15)
+            .filter((r) => !recBase.some((rb) => rb.industry === r.industry))
+            .slice(0, 3 - recBase.length),
+        ]
+      : recBase.slice(0, 3); // 3つを超える場合は最初の3つだけ
 
-      job: r.job,
+    const recMapped = rec.map((r) => ({
 
-      industries: r.industries,
+      industry: r.industry,
+
+      matchScore: r.matchScore,
 
       description: r.description,
+
+      exampleRoles: r.exampleRoles,
+
+      skills: r.skills,
+
+      qualifications: r.qualifications,
 
     }));
 
@@ -89,7 +108,7 @@ export async function POST(req: Request) {
 
       interests: body.interests ?? [],
 
-      recommendedJobs: rec,
+      recommendedIndustries: recMapped,
 
       experienceText: body.experienceText || "",
 
@@ -281,17 +300,21 @@ export async function POST(req: Request) {
 
       },
 
-      recommended: (parsed.recommendedJobs || []).map((job: any) => ({
-
-        job: job.job || "",
-
-        industries: job.industries || [],
-
-        why_fit: job.reason || "",
-
-        job_description: "",
-
-      })),
+      recommended: (() => {
+        const aiResults = parsed.recommendedIndustries || [];
+        // AI結果が3つ未満の場合は、システム推薦から補完
+        const systemResults = recMapped.filter(
+          (r) => !aiResults.some((ai: any) => ai.industry === r.industry)
+        );
+        const combined = [...aiResults, ...systemResults].slice(0, 3);
+        
+        return combined.map((ind: any) => ({
+          name: ind.industry || ind.name || "",
+          industry: ind.industry || ind.name || "",
+          matchScore: ind.matchScore || 0,
+          reason: ind.reason || ind.why_fit || (ind.description ? `${ind.description} あなたのC/L/Tバランスと適合度が高い業界です。` : ""),
+        }));
+      })(),
 
       skills: {
 
@@ -299,7 +322,7 @@ export async function POST(req: Request) {
 
         differentiators: [] as string[],
 
-        certifications_examples: (parsed.recommendedJobs?.[0]?.qualifications || []) as string[],
+        certifications_examples: [] as string[],
 
       },
 
@@ -330,6 +353,14 @@ export async function POST(req: Request) {
       },
 
       experience_insights: (parsed.experienceInsights || []) as any[],
+
+      mismatch_industries: (parsed.mismatchIndustries || []).map((m: any) => ({
+        industry: m.industry || "",
+        reason: m.reason || "",
+        solution: m.solution || { shortTerm: "", mediumTerm: "" },
+      })) as any[],
+
+      action_tips: parsed.actionTips || { C: "", L: "", T: "" },
 
     };
 
@@ -363,25 +394,31 @@ export async function POST(req: Request) {
 
     }
 
-    // recommendedJobsのskillsをskillsに反映
-
-    if (parsed.recommendedJobs && parsed.recommendedJobs.length > 0) {
-
-      const allSkills = parsed.recommendedJobs.flatMap((job: any) => job.skills || []);
-
-      const uniqueSkills = Array.from(new Set(allSkills)) as string[];
-
-      transformed.skills.universal = uniqueSkills.slice(0, Math.ceil(uniqueSkills.length / 2));
-
-      transformed.skills.differentiators = uniqueSkills.slice(Math.ceil(uniqueSkills.length / 2));
-
+    // 必ず3件になるように補完（不足している場合）
+    if (transformed.recommended.length < 3) {
+      const existingNames = new Set(transformed.recommended.map((r: any) => r.industry || r.name));
+      const additional = recMapped
+        .filter((r) => !existingNames.has(r.industry))
+        .slice(0, 3 - transformed.recommended.length)
+        .map((r) => ({
+          name: r.industry,
+          industry: r.industry,
+          matchScore: r.matchScore,
+          reason: `${r.description} あなたのC/L/Tバランスと適合度が高い業界です。`,
+        }));
+      transformed.recommended = [...transformed.recommended, ...additional].slice(0, 3);
+    }
+    
+    // 4つ以上ある場合は最初の3つだけ
+    if (transformed.recommended.length > 3) {
+      transformed.recommended = transformed.recommended.slice(0, 3);
     }
 
 
 
     return NextResponse.json({
 
-      input: { ...body, clt, recommendedJobs: rec },
+      input: { ...body, clt, recommendedIndustries: recMapped },
 
       result: transformed,
 

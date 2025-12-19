@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import { VERBS, CATEGORY_INFO, type VerbItem } from "@/data/verbOptions";
-import { JOB_PROFILES } from "@/data/jobs";
 
 type ApiResponse = {
   input: {
@@ -17,7 +16,7 @@ type ApiResponse = {
       top: "C" | "L" | "T";
       selectedByCategory: { C: string[]; L: string[]; T: string[] };
     };
-    recommendedJobs: any[];
+    recommendedIndustries: any[];
   };
   result: any;
   error?: string;
@@ -218,8 +217,29 @@ export default function Home() {
   const clt = response?.input?.clt;
   const analysis = response?.result ?? null;
 
-  const ratio = clt?.ratio ?? { C: 0, L: 0, T: 0 };
-  const pieTotal = ratio.C + ratio.L + ratio.T || 1;
+  // パーセンテージを1%単位に丸めて合計100%に調整
+  const rawRatio = clt?.ratio ?? { C: 33, L: 33, T: 34 };
+  const sum = rawRatio.C + rawRatio.L + rawRatio.T;
+  const diff = 100 - sum;
+  
+  // 差分を最大の項目に加算（同値の場合はC優先）
+  let ratio = { ...rawRatio };
+  if (diff !== 0) {
+    if (ratio.C >= ratio.L && ratio.C >= ratio.T) {
+      ratio.C += diff;
+    } else if (ratio.L >= ratio.C && ratio.L >= ratio.T) {
+      ratio.L += diff;
+    } else {
+      ratio.T += diff;
+    }
+  }
+  
+  // 1%単位に丸める
+  ratio.C = Math.round(ratio.C);
+  ratio.L = Math.round(ratio.L);
+  ratio.T = Math.round(ratio.T);
+  
+  const pieTotal = ratio.C + ratio.L + ratio.T || 100;
   const cEnd = (ratio.C / pieTotal) * 100;
   const lEnd = ((ratio.C + ratio.L) / pieTotal) * 100;
   const tEnd = 100;
@@ -228,6 +248,8 @@ export default function Home() {
   const strengths = analysis?.strengths_weaknesses?.strengths ?? null;
   const weaknesses = analysis?.strengths_weaknesses?.weaknesses ?? null;
   const skillsAnalysis = analysis?.skills ?? null;
+  const mismatchIndustries = analysis?.mismatch_industries ?? [];
+  const actionTips = analysis?.action_tips ?? { C: "", L: "", T: "" };
 
   const handlePrintPdf = () => {
     if (typeof window !== "undefined") {
@@ -497,57 +519,57 @@ export default function Home() {
                       return (
                         <div key={subcategory} style={{ marginBottom: 16 }}>
                           <h4
-                            style={{
+                  style={{
                               fontSize: isMobile ? "0.75rem" : "0.8rem",
                               fontWeight: 700,
-                              marginBottom: 8,
+                    marginBottom: 8,
                               color: "#888",
-                            }}
-                          >
+                  }}
+                >
                             {subcategory}
                           </h4>
-                          <div
-                            style={{
-                              display: "flex",
-                              flexWrap: "wrap",
-                              gap: 8,
-                            }}
-                          >
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 8,
+                  }}
+                >
                             {subcategoryVerbs.map((verb) => {
                               const active = verbs.includes(verb.label);
-                              return (
-                                <button
-                                  type="button"
+                    return (
+                      <button
+                        type="button"
                                   key={verb.id}
                                   onClick={() => toggleVerb(verb.label)}
                                   disabled={!active && allVerbs.length >= MAX_SELECTION}
-                                  style={{
-                                    padding: "6px 10px",
-                                    borderRadius: 999,
-                                    border: active
-                                      ? "1px solid #c62828"
-                                      : "1px solid #e0e0e0",
-                                    background: active ? "#c62828" : "#ffffff",
-                                    color: active ? "#ffffff" : "#333333",
-                                    fontSize: isMobile ? "0.72rem" : "0.76rem",
+                        style={{
+                          padding: "6px 10px",
+                          borderRadius: 999,
+                          border: active
+                            ? "1px solid #c62828"
+                            : "1px solid #e0e0e0",
+                          background: active ? "#c62828" : "#ffffff",
+                          color: active ? "#ffffff" : "#333333",
+                          fontSize: isMobile ? "0.72rem" : "0.76rem",
                                     cursor:
                                       !active && allVerbs.length >= MAX_SELECTION
                                         ? "not-allowed"
                                         : "pointer",
                                     opacity:
                                       !active && allVerbs.length >= MAX_SELECTION ? 0.5 : 1,
-                                    transition:
-                                      "background 0.15s, color 0.15s, box-shadow 0.15s",
-                                    boxShadow: active
-                                      ? "0 2px 6px rgba(198,40,40,0.4)"
-                                      : "none",
-                                  }}
-                                >
+                          transition:
+                            "background 0.15s, color 0.15s, box-shadow 0.15s",
+                          boxShadow: active
+                            ? "0 2px 6px rgba(198,40,40,0.4)"
+                            : "none",
+                        }}
+                      >
                                   {verb.label}
-                                </button>
-                              );
-                            })}
-                          </div>
+                      </button>
+                    );
+                  })}
+                </div>
                         </div>
                       );
                     })}
@@ -560,7 +582,7 @@ export default function Home() {
                         }}
                       />
                     )}
-                  </section>
+              </section>
                 );
               });
             })()}
@@ -586,8 +608,8 @@ export default function Home() {
               >
                 選択肢にない動詞があれば追加できます（2文字以上、重複不可）
               </p>
-              <div
-                style={{
+            <div
+              style={{
                   display: "flex",
                   gap: 8,
                   marginBottom: 12,
@@ -695,6 +717,40 @@ export default function Home() {
               )}
             </section>
 
+            {/* 精度向上のための説明 */}
+            <section style={{ marginTop: 16 }}>
+              <div
+                style={{
+                  background: "#fff5f5",
+                  borderRadius: 12,
+                  padding: isMobile ? 12 : 14,
+                  border: "1px solid #ffe0e0",
+                }}
+              >
+                <h4
+                  style={{
+                    fontSize: isMobile ? "0.75rem" : "0.8rem",
+                    fontWeight: 600,
+                    marginBottom: 6,
+                    color: "#c62828",
+                  }}
+                >
+                  精度を上げたい方へ
+                </h4>
+                <p
+                  style={{
+                    fontSize: isMobile ? "0.7rem" : "0.75rem",
+                    lineHeight: 1.6,
+                    color: "#555",
+                    margin: 0,
+                  }}
+                >
+                  精度を上げたい方は、上の選択だけでなく下の"自由入力（動詞追加）"もおすすめです。
+                  あなた固有の経験が反映され、診断の納得感が上がります。
+                </p>
+            </div>
+            </section>
+
             {/* 資格・スキル */}
             <section style={{ marginTop: 16 }}>
               <h3
@@ -741,7 +797,7 @@ export default function Home() {
                   color: "#c62828",
                 }}
               >
-                興味のある職業・業種（任意）
+                興味のある業種（任意）
               </h3>
               <p
                 style={{
@@ -777,7 +833,7 @@ export default function Home() {
                   color: "#c62828",
                 }}
               >
-                過去の経験（必須）
+                過去の経験（任意）
               </h3>
               <p
                 style={{
@@ -805,8 +861,8 @@ export default function Home() {
                   fontFamily: "inherit",
                 }}
               />
-              <button
-                type="button"
+            <button
+              type="button"
                 onClick={handleFollowupGenerate}
                 disabled={!experienceText.trim() || loadingFollowup}
                 style={{
@@ -870,6 +926,60 @@ export default function Home() {
               {loading ? "分析中..." : "AI診断を実行する"}
             </button>
 
+            {/* ローディング画面 */}
+            {loading && (
+              <>
+                <style dangerouslySetInnerHTML={{ __html: `
+                  @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                  }
+                  .loading-spinner {
+                    animation: spin 1s linear infinite;
+                  }
+                `}} />
+                <div
+                  style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: "rgba(255, 255, 255, 0.95)",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 1000,
+                    gap: 20,
+                  }}
+                >
+                  <div
+                    className="loading-spinner"
+                    style={{
+                      width: 50,
+                      height: 50,
+                      border: "4px solid #ffe0e0",
+                      borderTop: "4px solid #c62828",
+                      borderRadius: "50%",
+                    }}
+                  />
+                  <div
+                    style={{
+                      fontSize: isMobile ? "0.85rem" : "0.9rem",
+                      color: "#c62828",
+                      fontWeight: 600,
+                      textAlign: "center",
+                    }}
+                  >
+                    <div style={{ marginBottom: 8 }}>あなたの選択と経験を分析しています…</div>
+                    <div style={{ marginBottom: 8 }}>C/L/Tバランスを計算中…</div>
+                    <div>おすすめの業種・趣味を生成中…</div>
+                  </div>
+                </div>
+              </>
+            )}
+
             {error && (
               <p
                 style={{
@@ -932,17 +1042,19 @@ export default function Home() {
               <div
                 style={{
                   display: "flex",
+                  flexDirection: isMobile ? "column" : "row",
                   flexWrap: "wrap",
                   gap: 24,
-                  alignItems: "center",
+                  alignItems: isMobile ? "center" : "flex-start",
                 }}
               >
                 <div
                   style={{
                     position: "relative",
-                    width: isMobile ? 160 : 180,
-                    height: isMobile ? 160 : 180,
+                    width: isMobile ? 200 : 240,
+                    height: isMobile ? 200 : 240,
                     margin: "0 auto",
+                    flexShrink: 0,
                   }}
                 >
                   <div
@@ -961,99 +1073,102 @@ export default function Home() {
                   <div
                     style={{
                       position: "absolute",
-                      inset: "24%",
+                      inset: "20%",
                       borderRadius: "50%",
                       background: "#ffffff",
                       display: "flex",
+                      flexDirection: "column",
                       alignItems: "center",
                       justifyContent: "center",
                       textAlign: "center",
-                      padding: 6,
+                      padding: 8,
                     }}
                   >
                     <div
                       style={{
-                        fontSize: isMobile ? "0.7rem" : "0.78rem",
-                        lineHeight: 1.5,
+                        fontSize: isMobile ? "0.65rem" : "0.7rem",
+                        color: "#666",
+                        marginBottom: 4,
                       }}
                     >
+                      バランス
+                    </div>
                       <div
                         style={{
-                          fontWeight: 600,
-                          marginBottom: 3,
-                        }}
-                      >{`C ${ratio.C}% / L ${ratio.L}% / T ${ratio.T}%`}</div>
-                      <div
-                        style={{
-                          fontSize: isMobile ? "0.65rem" : "0.7rem",
-                          color: "#666",
-                        }}
-                      >
-                        現時点のバランス
-                      </div>
+                        fontSize: isMobile ? "0.6rem" : "0.65rem",
+                        color: "#999",
+                      }}
+                    >
+                      合計: {clt?.total || 0}個
                     </div>
                   </div>
                 </div>
 
-                <div style={{ flex: 1, minWidth: isMobile ? 200 : 220 }}>
+                <div style={{ flex: 1, minWidth: isMobile ? "100%" : 200 }}>
                   <ul
                     style={{
                       listStyle: "none",
                       padding: 0,
                       margin: 0,
-                      fontSize: isMobile ? "0.75rem" : "0.8rem",
+                      fontSize: isMobile ? "0.8rem" : "0.85rem",
                     }}
                   >
-                    <li style={{ marginBottom: 6 }}>
+                    <li style={{ marginBottom: 10, display: "flex", alignItems: "center" }}>
                       <span
                         style={{
                           display: "inline-block",
-                          width: 10,
-                          height: 10,
+                          width: 12,
+                          height: 12,
                           borderRadius: "50%",
                           background: "#e53935",
-                          marginRight: 6,
+                          marginRight: 10,
+                          flexShrink: 0,
                         }}
                       />
-                      C（Communication）：{ratio.C}%
+                      <span style={{ fontWeight: 600, marginRight: 6 }}>C（Communication）</span>
+                      <span style={{ color: "#c62828", fontWeight: 700 }}>{ratio.C}%</span>
                     </li>
-                    <li style={{ marginBottom: 6 }}>
+                    <li style={{ marginBottom: 10, display: "flex", alignItems: "center" }}>
                       <span
                         style={{
                           display: "inline-block",
-                          width: 10,
-                          height: 10,
+                          width: 12,
+                          height: 12,
                           borderRadius: "50%",
                           background: "#ff7043",
-                          marginRight: 6,
+                          marginRight: 10,
+                          flexShrink: 0,
                         }}
                       />
-                      L（Leadership）：{ratio.L}%
+                      <span style={{ fontWeight: 600, marginRight: 6 }}>L（Leadership）</span>
+                      <span style={{ color: "#c62828", fontWeight: 700 }}>{ratio.L}%</span>
                     </li>
-                    <li>
+                    <li style={{ marginBottom: 10, display: "flex", alignItems: "center" }}>
                       <span
                         style={{
                           display: "inline-block",
-                          width: 10,
-                          height: 10,
+                          width: 12,
+                          height: 12,
                           borderRadius: "50%",
                           background: "#ffb74d",
-                          marginRight: 6,
+                          marginRight: 10,
+                          flexShrink: 0,
                         }}
                       />
-                      T（Thinking）：{ratio.T}%
+                      <span style={{ fontWeight: 600, marginRight: 6 }}>T（Thinking）</span>
+                      <span style={{ color: "#c62828", fontWeight: 700 }}>{ratio.T}%</span>
                     </li>
                   </ul>
 
                   {analysis?.clt_summary?.tendency_text && (
                     <div
                       style={{
-                        marginTop: 12,
+                        marginTop: 16,
                         fontSize: isMobile ? "0.72rem" : "0.78rem",
                         lineHeight: 1.6,
                         background: "#fff5f5",
                         borderRadius: 12,
-                        padding: 10,
+                        padding: 12,
                         border: "1px solid #ffe0e0",
                       }}
                     >
@@ -1068,7 +1183,7 @@ export default function Home() {
           {/* 結果詳細 */}
           {response && analysis && (
             <>
-              {/* おすすめ職業 */}
+              {/* おすすめ業種 */}
               <section style={{ marginBottom: 20 }}>
                 <h3
                   style={{
@@ -1078,7 +1193,7 @@ export default function Home() {
                     color: "#c62828",
                   }}
                 >
-                  あなたに向いていそうな職業・業種（最大5件）
+                  あなたに向いていそうな業種（抽象レベル・3件）
                 </h3>
                 <div
                   style={{
@@ -1089,7 +1204,7 @@ export default function Home() {
                     gap: 16,
                   }}
                 >
-                  {recommended.slice(0, 5).map((job: any, idx: number) => (
+                  {recommended.slice(0, 3).map((industry: any, idx: number) => (
                     <article
                       key={idx}
                       style={{
@@ -1105,7 +1220,7 @@ export default function Home() {
                           fontWeight: 600,
                         }}
                       >
-                        候補 {idx + 1}
+                        候補 {idx + 1} {industry.matchScore && `（適合度: ${industry.matchScore}%）`}
                       </div>
                       <h4
                         style={{
@@ -1115,165 +1230,272 @@ export default function Home() {
                           color: "#b71c1c",
                         }}
                       >
-                        {job.job}
+                        {industry.name || industry.industry}
                       </h4>
-                      {job.industries && (
+                      {(industry.reason || industry.why_fit) && (
                         <p
                           style={{
                             fontSize: isMobile ? "0.72rem" : "0.78rem",
-                            marginBottom: 4,
-                            color: "#555",
-                          }}
-                        >
-                          業種例：{job.industries.join(" / ")}
-                        </p>
-                      )}
-                      {job.job_description && (
-                        <p
-                          style={{
-                            fontSize: isMobile ? "0.72rem" : "0.78rem",
-                            marginBottom: 4,
-                            lineHeight: 1.6,
-                          }}
-                        >
-                          {job.job_description}
-                        </p>
-                      )}
-                      {job.why_fit && (
-                        <p
-                          style={{
-                            fontSize: isMobile ? "0.72rem" : "0.78rem",
-                            marginBottom: 6,
+                            marginTop: 8,
                             lineHeight: 1.6,
                             color: "#333",
                           }}
                         >
-                          あなたに合いそうな理由：{job.why_fit}
+                          あなたに合いそうな理由：{industry.reason || industry.why_fit}
                         </p>
                       )}
-
-                      {/* スキルと資格 */}
-                      {(() => {
-                        // 職業名でJOB_PROFILESからマッチング
-                        const jobProfile = JOB_PROFILES.find(
-                          (p) => p.job === job.job
-                        );
-                        const jobSkills = jobProfile
-                          ? {
-                              skillsCommon: jobProfile.skillsCommon,
-                              skillsDifferentiator: jobProfile.skillsDifferentiator,
-                              certifications: jobProfile.certifications,
-                            }
-                          : null;
-
-                        return jobSkills ? (
-                          <div
-                            style={{
-                              marginTop: 8,
-                              paddingTop: 8,
-                              borderTop: "1px dashed #ffcccc",
-                            }}
-                          >
-                            {jobSkills.skillsCommon &&
-                              jobSkills.skillsCommon.length > 0 && (
-                                <>
-                                  <p
-                                    style={{
-                                      fontSize: isMobile ? "0.72rem" : "0.78rem",
-                                      fontWeight: 600,
-                                      marginBottom: 4,
-                                    }}
-                                  >
-                                    必要なスキル（普遍）
-                                  </p>
-                                  <ul
-                                    style={{
-                                      paddingLeft: 16,
-                                      margin: 0,
-                                      fontSize: isMobile ? "0.7rem" : "0.76rem",
-                                      marginBottom: 8,
-                                    }}
-                                  >
-                                    {jobSkills.skillsCommon.map(
-                                      (s: string, i: number) => (
-                                        <li key={`u-${i}`} style={{ marginBottom: 2 }}>
-                                          {s}
-                                        </li>
-                                      )
-                                    )}
-                                  </ul>
-                                </>
-                              )}
-
-                            {jobSkills.skillsDifferentiator &&
-                              jobSkills.skillsDifferentiator.length > 0 && (
-                                <>
-                                  <p
-                                    style={{
-                                      fontSize: isMobile ? "0.72rem" : "0.78rem",
-                                      fontWeight: 600,
-                                      marginTop: 8,
-                                      marginBottom: 4,
-                                    }}
-                                  >
-                                    必要なスキル（差別化）
-                                  </p>
-                                  <ul
-                                    style={{
-                                      paddingLeft: 16,
-                                      margin: 0,
-                                      fontSize: isMobile ? "0.7rem" : "0.76rem",
-                                      marginBottom: 8,
-                                    }}
-                                  >
-                                    {jobSkills.skillsDifferentiator.map(
-                                      (s: string, i: number) => (
-                                        <li key={`d-${i}`} style={{ marginBottom: 2 }}>
-                                          {s}
-                                        </li>
-                                      )
-                                    )}
-                                  </ul>
-                                </>
-                              )}
-
-                            {jobSkills.certifications &&
-                              jobSkills.certifications.length > 0 && (
-                                <>
-                                  <p
-                                    style={{
-                                      fontSize: isMobile ? "0.72rem" : "0.78rem",
-                                      fontWeight: 600,
-                                      marginTop: 8,
-                                      marginBottom: 4,
-                                    }}
-                                  >
-                                    資格の例
-                                  </p>
-                                  <ul
-                                    style={{
-                                      paddingLeft: 16,
-                                      margin: 0,
-                                      fontSize: isMobile ? "0.7rem" : "0.76rem",
-                                    }}
-                                  >
-                                    {jobSkills.certifications.map(
-                                      (s: string, i: number) => (
-                                        <li key={`c-${i}`} style={{ marginBottom: 2 }}>
-                                          {s}
-                                        </li>
-                                      )
-                                    )}
-                                  </ul>
-                                </>
-                              )}
-                          </div>
-                        ) : null;
-                      })()}
                     </article>
                   ))}
                 </div>
               </section>
+
+              {/* 向いていない業種 */}
+              {mismatchIndustries.length > 0 && (
+                <section style={{ marginBottom: 20 }}>
+                  <h3
+                    style={{
+                      fontSize: isMobile ? "0.88rem" : "0.95rem",
+                      fontWeight: 600,
+                      marginBottom: 12,
+                      color: "#c62828",
+                    }}
+                  >
+                    現時点ではストレスを感じやすい可能性がある業種（最大3件）
+                  </h3>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: isMobile
+                        ? "1fr"
+                        : "repeat(auto-fit, minmax(260px, 1fr))",
+                      gap: 16,
+                    }}
+                  >
+                    {mismatchIndustries.slice(0, 3).map((industry: any, idx: number) => (
+                      <article
+                        key={idx}
+                        style={{
+                          ...cardStyle,
+                          background: "#fffafa",
+                          border: "1px solid #ffcccc",
+                        }}
+                      >
+                        <h4
+                          style={{
+                            fontSize: isMobile ? "0.88rem" : "0.95rem",
+                            fontWeight: 700,
+                            marginBottom: 6,
+                            color: "#b71c1c",
+                          }}
+                        >
+                          {industry.industry}
+                        </h4>
+                        {industry.reason && (
+                          <p
+                            style={{
+                              fontSize: isMobile ? "0.72rem" : "0.78rem",
+                              lineHeight: 1.6,
+                              color: "#555",
+                              marginBottom: 12,
+                            }}
+                          >
+                            {industry.reason}
+                          </p>
+                        )}
+                        {industry.solution && (
+                          <div
+                            style={{
+                              marginTop: 12,
+                              paddingTop: 12,
+                              borderTop: "1px dashed #ffcccc",
+                            }}
+                          >
+                            <p
+                              style={{
+                                fontSize: isMobile ? "0.72rem" : "0.78rem",
+                                fontWeight: 600,
+                                marginBottom: 6,
+                                color: "#c62828",
+                              }}
+                            >
+                              対策（こうすると改善できます）
+                            </p>
+                            {industry.solution.shortTerm && (
+                              <p
+                                style={{
+                                  fontSize: isMobile ? "0.7rem" : "0.76rem",
+                                  lineHeight: 1.6,
+                                  color: "#555",
+                                  marginBottom: 4,
+                                }}
+                              >
+                                <strong>短期:</strong> {industry.solution.shortTerm}
+                              </p>
+                            )}
+                            {industry.solution.mediumTerm && (
+                              <p
+                                style={{
+                                  fontSize: isMobile ? "0.7rem" : "0.76rem",
+                                  lineHeight: 1.6,
+                                  color: "#555",
+                                }}
+                              >
+                                <strong>中期:</strong> {industry.solution.mediumTerm}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* C/L/Tを伸ばすためのおすすめ行動 */}
+              {actionTips && (actionTips.C || actionTips.L || actionTips.T) && (
+                <section style={{ marginBottom: 20 }}>
+                  <h3
+                    style={{
+                      fontSize: isMobile ? "0.88rem" : "0.95rem",
+                      fontWeight: 600,
+                      marginBottom: 12,
+                      color: "#c62828",
+                    }}
+                  >
+                    C/L/Tを伸ばすためのおすすめ行動（各1つ）
+                  </h3>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: isMobile
+                        ? "1fr"
+                        : "repeat(auto-fit, minmax(280px, 1fr))",
+                      gap: 16,
+                    }}
+                  >
+                    {actionTips.C && (
+                      <article
+                        style={{
+                          ...cardStyle,
+                          background: "#fffdfd",
+                        }}
+                      >
+                        <h4
+                          style={{
+                            fontSize: isMobile ? "0.88rem" : "0.95rem",
+                            fontWeight: 700,
+                            marginBottom: 8,
+                            color: "#b71c1c",
+                          }}
+                        >
+                          C（Communication）を伸ばす
+                        </h4>
+                        <p
+                          style={{
+                            fontSize: isMobile ? "0.72rem" : "0.78rem",
+                            lineHeight: 1.6,
+                            color: "#333",
+                            marginBottom: 6,
+                          }}
+                        >
+                          <strong>行動:</strong> {actionTips.C.split(" / ")[0] || actionTips.C}
+                        </p>
+                        {actionTips.C.includes(" / ") && (
+                          <p
+                            style={{
+                              fontSize: isMobile ? "0.7rem" : "0.76rem",
+                              lineHeight: 1.6,
+                              color: "#666",
+                            }}
+                          >
+                            <strong>補足:</strong> {actionTips.C.split(" / ")[1]}
+                          </p>
+                        )}
+                      </article>
+                    )}
+                    {actionTips.L && (
+                      <article
+                        style={{
+                          ...cardStyle,
+                          background: "#fffdfd",
+                        }}
+                      >
+                        <h4
+                          style={{
+                            fontSize: isMobile ? "0.88rem" : "0.95rem",
+                            fontWeight: 700,
+                            marginBottom: 8,
+                            color: "#b71c1c",
+                          }}
+                        >
+                          L（Leadership）を伸ばす
+                        </h4>
+                        <p
+                          style={{
+                            fontSize: isMobile ? "0.72rem" : "0.78rem",
+                            lineHeight: 1.6,
+                            color: "#333",
+                            marginBottom: 6,
+                          }}
+                        >
+                          <strong>行動:</strong> {actionTips.L.split(" / ")[0] || actionTips.L}
+                        </p>
+                        {actionTips.L.includes(" / ") && (
+                          <p
+                            style={{
+                              fontSize: isMobile ? "0.7rem" : "0.76rem",
+                              lineHeight: 1.6,
+                              color: "#666",
+                            }}
+                          >
+                            <strong>補足:</strong> {actionTips.L.split(" / ")[1]}
+                          </p>
+                        )}
+                      </article>
+                    )}
+                    {actionTips.T && (
+                      <article
+                        style={{
+                          ...cardStyle,
+                          background: "#fffdfd",
+                        }}
+                      >
+                        <h4
+                          style={{
+                            fontSize: isMobile ? "0.88rem" : "0.95rem",
+                            fontWeight: 700,
+                            marginBottom: 8,
+                            color: "#b71c1c",
+                          }}
+                        >
+                          T（Thinking）を伸ばす
+                        </h4>
+                        <p
+                          style={{
+                            fontSize: isMobile ? "0.72rem" : "0.78rem",
+                            lineHeight: 1.6,
+                            color: "#333",
+                            marginBottom: 6,
+                          }}
+                        >
+                          <strong>行動:</strong> {actionTips.T.split(" / ")[0] || actionTips.T}
+                        </p>
+                        {actionTips.T.includes(" / ") && (
+                          <p
+                            style={{
+                              fontSize: isMobile ? "0.7rem" : "0.76rem",
+                              lineHeight: 1.6,
+                              color: "#666",
+                            }}
+                          >
+                            <strong>補足:</strong> {actionTips.T.split(" / ")[1]}
+                          </p>
+                        )}
+                      </article>
+                    )}
+                  </div>
+                </section>
+              )}
 
               {/* 強み・弱み */}
               <section style={{ marginBottom: 20 }}>
@@ -1559,6 +1781,33 @@ export default function Home() {
                     </div>
                   </section>
                 )}
+
+              {/* 現状の傾向であることを強調する注記 */}
+              {response && analysis && (
+                <section style={{ marginBottom: 20 }}>
+                  <div
+                    style={{
+                      ...cardStyle,
+                      background: "#fff5f5",
+                      border: "1px solid #ffe0e0",
+                    }}
+                  >
+                    <p
+                      style={{
+                        fontSize: isMobile ? "0.72rem" : "0.78rem",
+                        lineHeight: 1.8,
+                        color: "#555",
+                        margin: 0,
+                        textAlign: "center",
+                      }}
+                    >
+                      この分析結果は、あなたの「現時点での選択・経験」に基づいた傾向です。
+                      <br />
+                      経験や行動が変わることで、C/L/Tバランスも変化していきます。
+                    </p>
+                  </div>
+                </section>
+              )}
 
               {/* タイプ説明カード（固定） */}
               <section>
