@@ -27,8 +27,8 @@ function ratioFrom(primary: CLT, secondary: CLT): Record<CLT, number> {
 // 既存5件（そのまま）
 const EXISTING_PROFILES: JobProfile[] = [
   {
-    job: "法人営業",
-    industries: ["IT", "人材", "SaaS", "広告"],
+    job: "起業経営",
+    industries: ["IT", "人材", "SaaS", "広告","スタートアップ"],
     requiredRatio: { C: 55, L: 30, T: 15 },
     description: "顧客の課題を聞き出し、提案し、関係構築を通じて売上をつくる仕事。",
     skillsCommon: ["顧客対応", "コミュニケーション", "提案力", "関係構築"],

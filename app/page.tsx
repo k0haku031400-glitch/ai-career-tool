@@ -78,6 +78,7 @@ function SectionHeader({
 const MAX_SELECTION = 100;
 
 export default function Home() {
+  const [isStarted, setIsStarted] = useState(false);
   const [verbs, setVerbs] = useState<string[]>([]);
   const [customVerbs, setCustomVerbs] = useState<string[]>([]);
   const [customVerbInput, setCustomVerbInput] = useState<string>("");
@@ -285,6 +286,253 @@ export default function Home() {
     boxShadow: "none",
   };
 
+  // イントロ画面
+  if (!isStarted) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          background: "#ffffff",
+          padding: isMobile ? "24px 16px 40px" : "40px 24px 60px",
+          position: "relative",
+        }}
+      >
+        {/* 左上ヘッダー（会社名とロゴ） */}
+        <div
+          style={{
+            position: "absolute",
+            top: isMobile ? 16 : 24,
+            left: isMobile ? 16 : 24,
+            display: "flex",
+            alignItems: "center",
+            gap: isMobile ? 8 : 10,
+            zIndex: 10,
+          }}
+        >
+          <Image
+            src="/logo-ai-revolution.jpg"
+            alt="株式会社AI Revolution"
+            width={isMobile ? 28 : 32}
+            height={isMobile ? 28 : 32}
+            style={{ objectFit: "contain" }}
+          />
+          <span
+            style={{
+              fontSize: isMobile ? "0.75rem" : "0.85rem",
+              fontWeight: 600,
+              color: "#c62828",
+              whiteSpace: "nowrap",
+            }}
+          >
+            株式会社AI Revolution
+          </span>
+        </div>
+
+        <div
+          style={{
+            maxWidth: 800,
+            margin: "0 auto",
+          }}
+        >
+          {/* ヒーローエリア */}
+          <section
+            style={{
+              textAlign: "center",
+              marginBottom: isMobile ? 48 : 64,
+              paddingTop: isMobile ? 20 : 40,
+            }}
+          >
+            <h1
+              style={{
+                fontSize: isMobile ? "2.5rem" : "3.5rem",
+                fontWeight: 800,
+                color: "#c62828",
+                marginBottom: isMobile ? 12 : 16,
+                letterSpacing: "-0.02em",
+              }}
+            >
+              Lumipath
+            </h1>
+            <div
+              style={{
+                width: isMobile ? 120 : 160,
+                height: 4,
+                background: "#c62828",
+                margin: "0 auto",
+                marginBottom: isMobile ? 16 : 20,
+                borderRadius: 2,
+              }}
+            />
+            <p
+              style={{
+                fontSize: isMobile ? "0.95rem" : "1.1rem",
+                color: "#555",
+                lineHeight: 1.6,
+                fontWeight: 400,
+              }}
+            >
+              今の自分を可視化するキャリア診断
+            </p>
+          </section>
+
+          {/* ツール紹介 */}
+          <section
+            style={{
+              marginBottom: isMobile ? 40 : 56,
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)",
+                gap: isMobile ? 20 : 24,
+              }}
+            >
+              {[
+                {
+                  title: "自己分析",
+                  description:
+                    "好きな行動・経験から、C/L/T（対人・行動・思考）の傾向を分析します。",
+                },
+                {
+                  title: "向いている業種",
+                  description:
+                    "分析結果から現状向いている業種を提示します",
+                },
+                {
+                  title: "AIと経験を深掘り",
+                  description:
+                    "AIと経験を深掘りすることで、具体的なキャリアデザインが可能",
+                },
+              ].map((item, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    background: "#fffafa",
+                    borderRadius: 18,
+                    border: "1px solid #ffe0e0",
+                    padding: isMobile ? 20 : 24,
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+                  }}
+                >
+                  <h3
+                    style={{
+                      fontSize: isMobile ? "0.9rem" : "1rem",
+                      fontWeight: 700,
+                      color: "#c62828",
+                      marginBottom: 8,
+                    }}
+                  >
+                    {item.title}
+                  </h3>
+                  <p
+                    style={{
+                      fontSize: isMobile ? "0.75rem" : "0.85rem",
+                      color: "#666",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    {item.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* 診断の特徴 */}
+          <section
+            style={{
+              marginBottom: isMobile ? 40 : 56,
+              textAlign: "center",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                flexDirection: isMobile ? "column" : "row",
+                justifyContent: "center",
+                gap: isMobile ? 16 : 32,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              {[
+                { label: "所要時間", value: "約3〜5分" },
+              ].map((item, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: isMobile ? "0.7rem" : "0.75rem",
+                      color: "#999",
+                      fontWeight: 500,
+                    }}
+                  >
+                    {item.label}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: isMobile ? "0.9rem" : "1rem",
+                      color: "#c62828",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {item.value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* 診断開始ボタン */}
+          <section
+            style={{
+              textAlign: "center",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setIsStarted(true)}
+              style={{
+                padding: isMobile ? "16px 32px" : "18px 40px",
+                borderRadius: 999,
+                border: "none",
+                background: "#c62828",
+                color: "#ffffff",
+                fontSize: isMobile ? "1rem" : "1.1rem",
+                fontWeight: 700,
+                cursor: "pointer",
+                boxShadow: "0 6px 20px rgba(198,40,40,0.4)",
+                transition: "transform 0.2s, box-shadow 0.2s",
+                minWidth: isMobile ? "280px" : "320px",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-2px)";
+                e.currentTarget.style.boxShadow =
+                  "0 8px 24px rgba(198,40,40,0.5)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow =
+                  "0 6px 20px rgba(198,40,40,0.4)";
+              }}
+            >
+              診断をはじめる
+            </button>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  // 診断画面（既存のコード）
   return (
     <main
       style={{
@@ -385,7 +633,7 @@ export default function Home() {
                     color: "#c62828",
                   }}
                 >
-                  AIキャリア分析ツール
+                  Lumipath
                 </div>
                 <div
                   style={{
@@ -393,7 +641,7 @@ export default function Home() {
                     color: "#777",
                   }}
                 >
-                  あなたの選択した行動からC / L / Tバランスを可視化します
+                  今の自分を、行動から可視化するキャリア診断
                 </div>
               </div>
             </div>
