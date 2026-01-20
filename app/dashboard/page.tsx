@@ -2,7 +2,8 @@ import { createClient } from "@/utils/supabase/server";
 import { redirect } from "next/navigation";
 import LogoutButton from "@/components/LogoutButton";
 
-// 静的生成を無効化（環境変数が未設定でも動作するように）
+// Node.jsランタイムを明示的に指定（Edge Runtimeの警告を回避）
+export const runtime = 'nodejs';
 export const dynamic = "force-dynamic";
 
 type Assessment = {

@@ -2,6 +2,10 @@ import { createClient } from "@/utils/supabase/server";
 import { NextResponse } from "next/server";
 import { safeJsonParse } from "@/lib/safeJson";
 
+// Node.jsランタイムを明示的に指定（Edge Runtimeの警告を回避）
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 type AssessmentRequest = {
   industry_result: string;
   score_c: number;

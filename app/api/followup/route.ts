@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { safeJsonParse } from "@/lib/safeJson";
 
+// Node.jsランタイムを明示的に指定（Edge Runtimeの警告を回避）
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as {

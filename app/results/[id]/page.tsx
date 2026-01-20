@@ -4,6 +4,8 @@ import LogoutButton from "@/components/LogoutButton";
 import Image from "next/image";
 import ScoreVisualizer from "@/components/ScoreVisualizer";
 
+// Node.jsランタイムを明示的に指定（Edge Runtimeの警告を回避）
+export const runtime = 'nodejs';
 export const dynamic = "force-dynamic";
 
 type Assessment = {

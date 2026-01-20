@@ -119,6 +119,7 @@ export default function Home() {
 
   // ログイン状態と前回の診断結果を取得
   const [user, setUser] = useState<any>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [previousAssessment, setPreviousAssessment] = useState<{
     score_c: number;
     score_l: number;
@@ -138,6 +139,7 @@ export default function Home() {
 
         const { data: { user: currentUser } } = await supabase.auth.getUser();
         setUser(currentUser);
+        setUserEmail(currentUser?.email || null);
 
         if (currentUser) {
           // 前回の診断結果を取得
@@ -154,7 +156,7 @@ export default function Home() {
           }
         }
       } catch (error) {
-        console.error("Auth check error:", error);
+        // エラーは静かに処理（本番環境ではログを出さない）
       } finally {
         setCheckingAuth(false);
       }
@@ -488,6 +490,26 @@ export default function Home() {
           position: "relative",
         }}
       >
+        {/* ログイン済みユーザー情報の表示 */}
+        {!checkingAuth && user && userEmail && (
+          <div
+            style={{
+              position: "absolute",
+              top: isMobile ? 16 : 24,
+              right: isMobile ? 16 : 24,
+              padding: "8px 16px",
+              borderRadius: 999,
+              background: "#f0fdf4",
+              border: "1px solid #22c55e",
+              fontSize: isMobile ? "0.7rem" : "0.75rem",
+              color: "#166534",
+              fontWeight: 600,
+              zIndex: 10,
+            }}
+          >
+            {userEmail.split("@")[0]}さんの診断
+          </div>
+        )}
         {/* 左上ヘッダー（会社名とロゴ） */}
         <div
           style={{
@@ -958,9 +980,20 @@ export default function Home() {
                         fontSize: isMobile ? "0.75rem" : "0.85rem",
                         color: "#166534",
                         lineHeight: 1.6,
+                        fontWeight: 600,
+                        marginBottom: 4,
                       }}
                     >
-                      ✅ ログイン済みです。診断結果は自動的に保存されます。
+                      ✅ {userEmail ? `${userEmail.split("@")[0]}さんの診断を開始します` : "ログイン済みです"}
+                    </p>
+                    <p
+                      style={{
+                        fontSize: isMobile ? "0.7rem" : "0.75rem",
+                        color: "#166534",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      診断結果は自動的に保存されます。
                     </p>
                   </div>
                 )
@@ -1041,18 +1074,8 @@ export default function Home() {
                 new Set(VERBS.map((v) => v.category))
               );
               
-              // 開発時のみカテゴリ/サブカテゴリの件数をログ出力
-              if (process.env.NODE_ENV !== "production") {
-                const categoryCounts: Record<string, Record<string, number>> = {};
-                VERBS.forEach((v) => {
-                  if (!categoryCounts[v.category]) {
-                    categoryCounts[v.category] = {};
-                  }
-                  categoryCounts[v.category][v.subcategory] =
-                    (categoryCounts[v.category][v.subcategory] || 0) + 1;
-                });
-                console.log("カテゴリ/サブカテゴリ件数:", categoryCounts);
-              }
+              // 開発時のみカテゴリ/サブカテゴリの件数をログ出力（本番環境では削除）
+              // 開発時のデバッグ用コードは削除済み
 
               return categories.map((category, categoryIndex) => {
                 const categoryVerbs = VERBS.filter((v) => v.category === category);

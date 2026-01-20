@@ -5,9 +5,10 @@ import { createClient } from "@/utils/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
-export default function LoginPage() {
+export default function SignUpPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -19,17 +20,17 @@ export default function LoginPage() {
   const getSupabaseClient = () => {
     if (typeof window === "undefined") return null;
     try {
-      // 環境変数が未設定の場合は null を返す
-      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      const supabase = createClient();
+      if (!supabase) {
         return null;
       }
-      return createClient();
+      return supabase;
     } catch {
       return null;
     }
   };
 
-  const handleGoogleLogin = async () => {
+  const handleGoogleSignUp = async () => {
     setLoading(true);
     setError(null);
     const supabase = getSupabaseClient();
@@ -42,7 +43,7 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirect)}`,
         },
       });
       if (error) throw error;
@@ -53,38 +54,26 @@ export default function LoginPage() {
     }
   };
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setMessage(null);
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      setError("クライアントの初期化に失敗しました");
-      setLoading(false);
-      return;
-    }
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (error) throw error;
-      // リダイレクト先があればそこへ、なければダッシュボードへ
-      router.push(redirect);
-      router.refresh();
-    } catch (err: any) {
-      setError(err.message || "ログインに失敗しました");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     setMessage(null);
+
+    // パスワード確認
+    if (password !== confirmPassword) {
+      setError("パスワードが一致しません");
+      setLoading(false);
+      return;
+    }
+
+    // パスワード強度チェック
+    if (password.length < 6) {
+      setError("パスワードは6文字以上にしてください");
+      setLoading(false);
+      return;
+    }
+
     const supabase = getSupabaseClient();
     if (!supabase) {
       setError("クライアントの初期化に失敗しました");
@@ -96,7 +85,7 @@ export default function LoginPage() {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirect)}`,
         },
       });
       if (error) throw error;
@@ -109,13 +98,13 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white px-5">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-red-50 to-white px-5">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
           <Link href="/" className="inline-block">
             <h1 className="text-3xl font-bold text-gray-900">Lumipath</h1>
           </Link>
-          <p className="mt-2 text-sm text-gray-600">ログインして診断を開始</p>
+          <p className="mt-2 text-sm text-gray-600">新規登録して診断を開始</p>
         </div>
 
         <div className="rounded-lg border border-red-100 bg-white p-6 shadow-sm">
@@ -133,11 +122,11 @@ export default function LoginPage() {
 
           {/* Googleログイン */}
           <button
-            onClick={handleGoogleLogin}
+            onClick={handleGoogleSignUp}
             disabled={loading}
             className="mb-4 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
-            {loading ? "処理中..." : "Googleでログイン"}
+            {loading ? "処理中..." : "Googleで登録"}
           </button>
 
           <div className="my-4 flex items-center">
@@ -146,8 +135,8 @@ export default function LoginPage() {
             <div className="flex-1 border-t border-gray-300"></div>
           </div>
 
-          {/* Email/Password ログイン */}
-          <form onSubmit={handleEmailLogin} className="space-y-4">
+          {/* Email/Password 登録 */}
+          <form onSubmit={handleSignUp} className="space-y-4">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
                 メールアドレス
@@ -173,36 +162,43 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                minLength={6}
                 className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
-                placeholder="••••••••"
+                placeholder="6文字以上"
               />
             </div>
 
-            <div className="flex gap-3">
-              <button
-                type="submit"
-                disabled={loading}
-                className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-              >
-                {loading ? "処理中..." : "ログイン"}
-              </button>
-              <button
-                type="button"
-                onClick={handleSignUp}
-                disabled={loading}
-                className="flex-1 rounded-lg border border-red-600 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
-              >
-                新規登録
-              </button>
+            <div>
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
+                パスワード（確認）
+              </label>
+              <input
+                id="confirmPassword"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                minLength={6}
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                placeholder="パスワードを再入力"
+              />
             </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {loading ? "処理中..." : "新規登録"}
+            </button>
           </form>
         </div>
 
         <div className="mt-6 text-center">
           <p className="text-sm text-gray-600">
-            アカウントをお持ちでない方は{" "}
-            <Link href={`/signup?redirect=${encodeURIComponent(redirect)}`} className="text-red-600 hover:text-red-700 font-semibold">
-              新規登録
+            既にアカウントをお持ちですか？{" "}
+            <Link href={`/login?redirect=${encodeURIComponent(redirect)}`} className="text-red-600 hover:text-red-700 font-semibold">
+              ログイン
             </Link>
           </p>
         </div>
@@ -210,4 +206,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

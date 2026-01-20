@@ -44,8 +44,5 @@ export const jobMaster: JobProfile[] = [
 
   // --- 5. 専門職・公共系 ---
   { id: "consultant", name: "経営コンサルタント", category: "専門", score_c: 30, score_l: 20, score_t: 50, description: "顧客の課題を構造化し、納得感のある解決策を論理的に提示する。" },
-  { id: "civil-servant", name: "市役所職員", category: "公共", score_c: 50, score_l: 20, score_t: 30, description: "市民サービスの提供や行政事務を行い、地域の課題解決に取り組む。" },
   { id: "teacher", name: "教師/講師", category: "教育", score_c: 50, score_l: 30, score_t: 20, description: "生徒に知識を伝え、学習をサポートし、その成長を支援する。" },
-  { id: "nurse", name: "看護師", category: "医療", score_c: 50, score_l: 20, score_t: 30, description: "患者の療養生活を支え、医師の診療をサポートし、健康回復を支援する。" },
-  { id: "construction-manager", name: "施工管理", category: "製造", score_c: 30, score_l: 50, score_t: 20, description: "建設現場の工程や安全を管理し、計画通りに工事を完遂させる。" }
 ];

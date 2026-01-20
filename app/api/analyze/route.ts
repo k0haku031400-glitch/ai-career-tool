@@ -8,8 +8,13 @@ import { recommendJobs } from "@/lib/recommendJobs";
 import { SYSTEM_PROMPT, buildUserPrompt } from "@/lib/prompts";
 
 import { safeJsonParse } from "@/lib/safeJson";
+import type { AIResponse, OpenAIResponse, TransformedResult, RecommendedJob } from "@/lib/types";
 
 import { createClient } from "@/utils/supabase/server";
+
+// Node.jsランタイムを明示的に指定（Edge Runtimeの警告を回避）
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 const JSON_ONLY_SYSTEM_PROMPT = `${SYSTEM_PROMPT}
 
@@ -50,7 +55,11 @@ export async function POST(req: Request) {
     let previousRatio: { C: number; L: number; T: number } | null = null;
     let isIncremental = false;
 
-    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    // 環境変数のバリデーションを使用
+    const { getEnvConfig } = await import("@/lib/env");
+    const envConfig = getEnvConfig();
+
+    if (envConfig.isSupabaseEnabled) {
       const supabase = await createClient();
       if (supabase) {
         const {
@@ -175,14 +184,14 @@ export async function POST(req: Request) {
       previousRatio,
     });
 
-    const apiKey = process.env.OPENAI_API_KEY;
-
-    if (!apiKey) {
+    if (!envConfig.isOpenAIEnabled) {
       return NextResponse.json(
         { error: "OPENAI_API_KEY が未設定です" },
         { status: 500 }
       );
     }
+
+    const apiKey = envConfig.openaiApiKey!;
 
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -214,7 +223,7 @@ export async function POST(req: Request) {
     const responseText = await resp.text();
 
     // 安全なJSONパースを使用
-    const data = safeJsonParse<any>(responseText);
+    const data = safeJsonParse<OpenAIResponse>(responseText);
 
     if (!data || typeof data !== "object") {
       console.error("OpenAI API response is not JSON:", responseText);
@@ -249,7 +258,7 @@ export async function POST(req: Request) {
     const jsonText = content.slice(firstBrace, lastBrace + 1);
 
     // 安全なJSONパースを使用
-    const parsed = safeJsonParse<any>(jsonText, null);
+    const parsed = safeJsonParse<AIResponse>(jsonText, null);
 
     if (!parsed || typeof parsed !== "object") {
       console.error("AI raw output (JSON parse failed):", content);
@@ -262,9 +271,9 @@ export async function POST(req: Request) {
 
     // 職種推薦結果を処理
     const aiRecommendedJobs = parsed.recommendedJobs || [];
-    const recommended = aiRecommendedJobs
+    const recommended: RecommendedJob[] = aiRecommendedJobs
       .slice(0, 3)
-      .map((job: any) => ({
+      .map((job) => ({
         job: job.job || "",
         matchScore: job.matchScore || 0,
         reason: job.reason || "",
@@ -273,7 +282,7 @@ export async function POST(req: Request) {
 
     // 不足分をシステム推薦から補完
     if (recommended.length < 3) {
-      const existingJobs = new Set(recommended.map((r: any) => r.job));
+      const existingJobs = new Set(recommended.map((r) => r.job));
       const additional = recMapped
         .filter((r) => !existingJobs.has(r.job))
         .slice(0, 3 - recommended.length)
@@ -298,7 +307,7 @@ export async function POST(req: Request) {
     const strengthsArray = strengths;
     const weaknessesArray = weaknesses;
 
-    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    if (envConfig.isSupabaseEnabled) {
       const supabase = await createClient();
       if (supabase) {
         const {
@@ -336,13 +345,13 @@ export async function POST(req: Request) {
     }
 
     // 既存のUI互換性のため、新しい形式から既存の形式に変換
-    const transformed: any = {
+    const transformed: TransformedResult = {
       clt_summary: {
         ratio: parsed.cltRatio || { C: clt.ratio.C, L: clt.ratio.L, T: clt.ratio.T },
         tendency_text: parsed.summary || "",
-        evidence_verbs: [] as string[],
+        evidence_verbs: [],
       },
-      recommended: recommended.map((r: any) => ({
+      recommended: recommended.map((r) => ({
         name: r.job,
         job: r.job,
         matchScore: r.matchScore,
@@ -350,9 +359,9 @@ export async function POST(req: Request) {
         actionPlan: r.actionPlan,
       })),
       skills: {
-        universal: [] as string[],
-        differentiators: [] as string[],
-        certifications_examples: [] as string[],
+        universal: [],
+        differentiators: [],
+        certifications_examples: [],
       },
       strengths_weaknesses: {
         strengths: {
@@ -365,14 +374,21 @@ export async function POST(req: Request) {
           thinking: weaknesses.slice(third, third * 2),
           action: weaknesses.slice(third * 2),
         },
-        tips: [] as string[],
+        tips: [],
       },
-      experience_insights: (parsed.experienceInsights || []) as any[],
-      mismatch_jobs: (parsed.mismatchJobs || []).map((m: any) => ({
+      experience_insights: (parsed.experienceInsights || []).map((insight) => ({
+        experience: insight.experience || "",
+        insight: insight.insight || "",
+        suitable_role: insight.suitable_role || "",
+      })),
+      mismatch_jobs: (parsed.mismatchJobs || []).map((m) => ({
         job: m.job || "",
         reason: m.reason || "",
-        solution: m.solution || { shortTerm: "", mediumTerm: "" },
-      })) as any[],
+        solution: {
+          shortTerm: m.solution?.shortTerm || "",
+          mediumTerm: m.solution?.mediumTerm || "",
+        },
+      })),
       action_tips: parsed.actionTips || { C: "", L: "", T: "" },
     };
 
