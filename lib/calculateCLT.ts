@@ -30,7 +30,49 @@ function classifyCustomVerb(verb: string): CLT | null {
   return null;
 }
 
-export function calculateCLT(selectedVerbs: string[]): CLTScore {
+/**
+ * ベーススコア（前回値）と追加要素（今回の変動値）を統合する
+ * 加重平均を使用: (前回スコア * 0.6) + (今回追加要素 * 0.4)
+ */
+export function calculateIncrementalCLT(
+  baseRatio: { C: number; L: number; T: number },
+  incrementalDelta: { C: number; L: number; T: number }
+): { C: number; L: number; T: number } {
+  const weightBase = 0.6;
+  const weightIncremental = 0.4;
+
+  const newC = Math.round(baseRatio.C * weightBase + incrementalDelta.C * weightIncremental);
+  const newL = Math.round(baseRatio.L * weightBase + incrementalDelta.L * weightIncremental);
+  const newT = Math.round(baseRatio.T * weightBase + incrementalDelta.T * weightIncremental);
+
+  // 合計が100になるように調整
+  const sum = newC + newL + newT;
+  const diff = 100 - sum;
+
+  let ratio: { C: number; L: number; T: number } = {
+    C: Math.max(0, Math.min(100, newC)),
+    L: Math.max(0, Math.min(100, newL)),
+    T: Math.max(0, Math.min(100, newT)),
+  };
+
+  // 差分を最大の項目に加算（同値の場合はC優先）
+  if (diff !== 0) {
+    if (ratio.C >= ratio.L && ratio.C >= ratio.T) {
+      ratio.C = Math.max(0, Math.min(100, ratio.C + diff));
+    } else if (ratio.L >= ratio.C && ratio.L >= ratio.T) {
+      ratio.L = Math.max(0, Math.min(100, ratio.L + diff));
+    } else {
+      ratio.T = Math.max(0, Math.min(100, ratio.T + diff));
+    }
+  }
+
+  return ratio;
+}
+
+export function calculateCLT(
+  selectedVerbs: string[],
+  baseRatio?: { C: number; L: number; T: number } | null
+): CLTScore {
   const counts: Record<CLT, number> = { C: 0, L: 0, T: 0 };
   const selectedByCategory: Record<CLT, string[]> = {
     C: [],
@@ -67,7 +109,7 @@ export function calculateCLT(selectedVerbs: string[]): CLTScore {
   const sum = rawC + rawL + rawT;
   const diff = 100 - sum;
   
-  let ratio: Record<CLT, number> = {
+  let currentRatio: Record<CLT, number> = {
     C: rawC,
     L: rawL,
     T: rawT,
@@ -75,26 +117,37 @@ export function calculateCLT(selectedVerbs: string[]): CLTScore {
   
   // 差分を最大の項目に加算（同値の場合はC優先）
   if (diff !== 0) {
-    if (ratio.C >= ratio.L && ratio.C >= ratio.T) {
-      ratio.C += diff;
-    } else if (ratio.L >= ratio.C && ratio.L >= ratio.T) {
-      ratio.L += diff;
+    if (currentRatio.C >= currentRatio.L && currentRatio.C >= currentRatio.T) {
+      currentRatio.C += diff;
+    } else if (currentRatio.L >= currentRatio.C && currentRatio.L >= currentRatio.T) {
+      currentRatio.L += diff;
     } else {
-      ratio.T += diff;
+      currentRatio.T += diff;
     }
   }
 
+  // 前回値が存在する場合は、差分診断ロジックを適用
+  let finalRatio: Record<CLT, number> = currentRatio;
+  if (baseRatio) {
+    // 今回のスコアをそのままDeltaとして使用（NewScore = Base * 0.6 + Delta * 0.4）
+    // currentRatioが今回の経験・資格入力から計算されたDelta
+    const incrementalDelta = currentRatio;
+
+    // 加重平均で統合（Base * 0.6 + Delta * 0.4）
+    finalRatio = calculateIncrementalCLT(baseRatio, incrementalDelta);
+  }
+
   const top: CLT =
-    ratio.C >= ratio.L && ratio.C >= ratio.T
+    finalRatio.C >= finalRatio.L && finalRatio.C >= finalRatio.T
       ? "C"
-      : ratio.L >= ratio.C && ratio.L >= ratio.T
+      : finalRatio.L >= finalRatio.C && finalRatio.L >= finalRatio.T
       ? "L"
       : "T";
 
   return {
     counts,
     total: counts.C + counts.L + counts.T,
-    ratio,
+    ratio: finalRatio,
     top,
     selectedByCategory,
   };

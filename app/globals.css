@@ -1,2 +1,36 @@
-/* Empty CSS file - Tailwind not configured */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
+/* フォント設定：日本語の読みやすさを重視 */
+@layer base {
+  body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+    line-height: 1.625; /* leading-relaxed相当 */
+    color: #0f172a; /* text-slate-900 */
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    color: #0f172a; /* text-slate-900 */
+    line-height: 1.625;
+  }
+  
+  p {
+    line-height: 1.625;
+  }
+}
+
+/* ページ内リンクで見出しが上に隠れないようにする */
+article h2,
+article h3 {
+  scroll-margin-top: 96px;
+}
+
+/* 重要語句はslate-900、補足説明はslate-500 */
+.text-important {
+  color: #0f172a; /* text-slate-900 */
+}
+
+.text-supplement {
+  color: #64748b; /* text-slate-500 */
+}

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { safeJsonParse } from "@/lib/safeJson";
 
 export async function POST(req: Request) {
   try {
@@ -73,9 +74,10 @@ ${body.selectedVerbs && body.selectedVerbs.length > 0
       );
     }
 
-    let parsed: any = null;
-    try {
-      parsed = JSON.parse(content);
+    // 安全なJSONパースを使用
+    const parsed = safeJsonParse<any>(content, null);
+    
+    if (parsed && typeof parsed === "object") {
       // JSONオブジェクトの場合、questionsキーを探す
       const questions = parsed.questions || parsed;
       if (Array.isArray(questions)) {
@@ -84,21 +86,21 @@ ${body.selectedVerbs && body.selectedVerbs.length > 0
       // 配列でない場合、最初の5つの値を取得
       const questionArray = Object.values(questions).slice(0, 5) as string[];
       return NextResponse.json({ questions: questionArray });
-    } catch {
-      // JSON解析失敗時は、テキストから質問を抽出
-      const lines = content
-        .split("\n")
-        .map((line: string) => line.trim())
-        .filter((line: string) => line && line.includes("？") || line.includes("?"))
-        .slice(0, 5);
-      if (lines.length > 0) {
-        return NextResponse.json({ questions: lines });
-      }
-      return NextResponse.json(
-        { error: "AI出力がJSONとして解析できません", content },
-        { status: 500 }
-      );
     }
+    
+    // JSON解析失敗時は、テキストから質問を抽出
+    const lines = content
+      .split("\n")
+      .map((line: string) => line.trim())
+      .filter((line: string) => line && (line.includes("？") || line.includes("?")))
+      .slice(0, 5);
+    if (lines.length > 0) {
+      return NextResponse.json({ questions: lines });
+    }
+    return NextResponse.json(
+      { error: "AI出力がJSONとして解析できません", content },
+      { status: 500 }
+    );
   } catch (e: any) {
     return NextResponse.json(
       { error: e?.message ?? "unknown error" },

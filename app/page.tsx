@@ -1,8 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { VERBS, CATEGORY_INFO, type VerbItem } from "@/data/verbOptions";
+import ConsentNotice from "@/components/ConsentNotice";
+import { createClient } from "@/utils/supabase/client";
+import Link from "next/link";
+
+// 静的生成を無効化
+export const dynamic = "force-dynamic";
 
 type ApiResponse = {
   input: {
@@ -16,10 +23,13 @@ type ApiResponse = {
       top: "C" | "L" | "T";
       selectedByCategory: { C: string[]; L: string[]; T: string[] };
     };
-    recommendedIndustries: any[];
+    recommendedJobs?: any[];
+    recommendedIndustries?: any[]; // 後方互換性のため残す
   };
   result: any;
   error?: string;
+  assessmentId?: string; // 診断結果保存後のID
+  isIncremental?: boolean; // 差分診断かどうか
 };
 
 // レスポンシブ用フック
@@ -90,10 +100,68 @@ export default function Home() {
   const [loadingFollowup, setLoadingFollowup] = useState(false);
   const [response, setResponse] = useState<ApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [assessmentResult, setAssessmentResult] = useState<{
+    industry_result: string;
+    score_c: number;
+    score_l: number;
+    score_t: number;
+    strengths: string[];
+    weaknesses: string[];
+  } | null>(null);
+  const router = useRouter();
+  // 重複保存防止のガード（一度だけ保存する）
+  const hasSavedRef = useRef(false);
   const isMobile = useMediaQuery("(max-width: 480px)");
   const allVerbs = [...verbs, ...customVerbs];
   const selectedCount = allVerbs.length;
+
+  // ログイン状態と前回の診断結果を取得
+  const [user, setUser] = useState<any>(null);
+  const [previousAssessment, setPreviousAssessment] = useState<{
+    score_c: number;
+    score_l: number;
+    score_t: number;
+    created_at: string;
+  } | null>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const supabase = createClient();
+        if (!supabase) {
+          setCheckingAuth(false);
+          return;
+        }
+
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        setUser(currentUser);
+
+        if (currentUser) {
+          // 前回の診断結果を取得
+          const { data: previous } = await supabase
+            .from("assessments")
+            .select("score_c, score_l, score_t, created_at")
+            .eq("user_id", currentUser.id)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .single();
+
+          if (previous) {
+            setPreviousAssessment(previous);
+          }
+        }
+      } catch (error) {
+        console.error("Auth check error:", error);
+      } finally {
+        setCheckingAuth(false);
+      }
+    };
+
+    checkAuth();
+  }, []);
 
   const toggleVerb = (v: string) => {
     if (allVerbs.length >= MAX_SELECTION && !allVerbs.includes(v)) return;
@@ -185,6 +253,8 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setResponse(null);
+    // 新しい診断を開始する際に保存フラグをリセット
+    hasSavedRef.current = false;
 
     try {
       const res = await fetch("/api/analyze", {
@@ -205,8 +275,58 @@ export default function Home() {
 
       if (!res.ok) {
         setError(data.error || "分析中にエラーが発生しました");
+        setAssessmentResult(null);
       } else {
         setResponse(data as ApiResponse);
+        
+        // APIレスポンスにassessmentIdが含まれている場合はリダイレクト
+        const assessmentId = (data as any).assessmentId;
+        if (assessmentId && typeof assessmentId === "string") {
+          // 診断結果ページにリダイレクト
+          router.push(`/results/${assessmentId}`);
+          return;
+        }
+        
+        // assessmentIdがない場合（未ログインなど）は従来通り表示
+        // 診断完了時に assessmentResult オブジェクトを生成
+        const responseData = data as ApiResponse;
+        const cltData = responseData.input?.clt;
+        const analysisData = responseData.result;
+        
+        if (cltData && analysisData) {
+          // 職種診断結果を取得（最初の推奨職種）
+          const recommended = analysisData.recommended ?? [];
+          const jobResult = recommended.length > 0
+            ? recommended[0]?.job || recommended[0]?.name || "未設定"
+            : "未設定";
+
+          // 強み・弱みを配列に変換
+          const strengthsData = analysisData.strengths_weaknesses?.strengths ?? {};
+          const strengthsArray: string[] = [
+            ...(strengthsData.interpersonal || []),
+            ...(strengthsData.thinking || []),
+            ...(strengthsData.action || []),
+          ];
+
+          const weaknessesData = analysisData.strengths_weaknesses?.weaknesses ?? {};
+          const weaknessesArray: string[] = [
+            ...(weaknessesData.interpersonal || []),
+            ...(weaknessesData.thinking || []),
+            ...(weaknessesData.action || []),
+          ];
+
+          // assessmentResult オブジェクトを生成（industry_resultは後方互換性のため保持）
+          const result = {
+            industry_result: jobResult, // 実際は職種名だが、DBカラム名の互換性のため
+            score_c: Math.round(cltData.ratio.C),
+            score_l: Math.round(cltData.ratio.L),
+            score_t: Math.round(cltData.ratio.T),
+            strengths: strengthsArray,
+            weaknesses: weaknessesArray,
+          };
+          
+          setAssessmentResult(result);
+        }
       }
     } catch (e: any) {
       setError(e?.message ?? "ネットワークエラーが発生しました");
@@ -217,6 +337,77 @@ export default function Home() {
 
   const clt = response?.input?.clt;
   const analysis = response?.result ?? null;
+
+  // 診断結果を保存する関数
+  const saveAssessment = async () => {
+    if (!assessmentResult) {
+      setError("保存する診断結果がありません");
+      return;
+    }
+
+    setSaving(true);
+    setSaveMessage(null);
+    setError(null);
+
+    try {
+      // 環境変数チェック（Supabase env が無い場合は保存処理をスキップ）
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+        console.warn("Supabase環境変数が設定されていません。保存機能は使用できません。");
+        setSaveMessage("保存機能は現在使用できません");
+        setSaving(false);
+        return;
+      }
+
+      // 動的にインポート（クライアント側でのみ実行）
+      const { createClient } = await import("@/utils/supabase/client");
+      const supabase = createClient();
+
+      // createClient が null を返した場合（環境変数未設定）
+      if (!supabase) {
+        console.warn("Supabase環境変数が設定されていません。保存機能は使用できません。");
+        setSaveMessage("保存機能は現在使用できません");
+        setSaving(false);
+        return;
+      }
+
+      // ユーザー認証を確認
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setSaveMessage("ログインが必要です");
+        setTimeout(() => {
+          router.push("/login");
+        }, 1500);
+        return;
+      }
+
+      // 保存APIを呼び出し（assessmentResult をそのまま使用）
+      const res = await fetch("/api/assessments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(assessmentResult),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || "保存に失敗しました");
+      }
+
+      // 手動保存成功時も保存フラグを設定
+      hasSavedRef.current = true;
+      setSaveMessage("診断結果を保存しました！");
+      setTimeout(() => {
+        setSaveMessage(null);
+      }, 3000);
+    } catch (e: any) {
+      setError(e?.message ?? "保存中にエラーが発生しました");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // パーセンテージを1%単位に丸めて合計100%に調整
   const rawRatio = clt?.ratio ?? { C: 33, L: 33, T: 34 };
@@ -491,6 +682,16 @@ export default function Home() {
             </div>
           </section>
 
+          {/* 同意ブロック */}
+          <section
+            style={{
+              marginBottom: isMobile ? 24 : 32,
+              textAlign: "center",
+            }}
+          >
+            <ConsentNotice />
+          </section>
+
           {/* 診断開始ボタン */}
           <section
             style={{
@@ -698,6 +899,113 @@ export default function Home() {
             padding: isMobile ? "16px 12px 20px" : "18px 18px 24px",
           }}
         >
+          {/* ログイン状態と前回診断結果の表示 */}
+          {!checkingAuth && (
+            <div style={{ marginBottom: 20 }}>
+              {user ? (
+                previousAssessment ? (
+                  <div
+                    style={{
+                      ...cardStyle,
+                      background: "#e0f2fe",
+                      border: "1px solid #0ea5e9",
+                      padding: isMobile ? 12 : 16,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <span style={{ fontSize: "1.2rem" }}>📊</span>
+                      <h3
+                        style={{
+                          fontSize: isMobile ? "0.85rem" : "0.95rem",
+                          fontWeight: 700,
+                          color: "#0369a1",
+                        }}
+                      >
+                        前回の結果をベースに診断を深める
+                      </h3>
+                    </div>
+                    <p
+                      style={{
+                        fontSize: isMobile ? "0.72rem" : "0.78rem",
+                        color: "#0c4a6e",
+                        lineHeight: 1.6,
+                        marginBottom: 8,
+                      }}
+                    >
+                      前回の診断結果（C: {previousAssessment.score_c}% / L: {previousAssessment.score_l}% / T: {previousAssessment.score_t}%）をベースに、今回の入力と6:4の比率で合成して診断します。
+                    </p>
+                    <p
+                      style={{
+                        fontSize: isMobile ? "0.7rem" : "0.75rem",
+                        color: "#075985",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      💡 経験・資格・興味のある職種を詳しく入力すると、より精度の高い診断が可能です。
+                    </p>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      ...cardStyle,
+                      background: "#f0fdf4",
+                      border: "1px solid #22c55e",
+                      padding: isMobile ? 12 : 16,
+                    }}
+                  >
+                    <p
+                      style={{
+                        fontSize: isMobile ? "0.75rem" : "0.85rem",
+                        color: "#166534",
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      ✅ ログイン済みです。診断結果は自動的に保存されます。
+                    </p>
+                  </div>
+                )
+              ) : (
+                <div
+                  style={{
+                    ...cardStyle,
+                    background: "#fff7ed",
+                    border: "1px solid #f59e0b",
+                    padding: isMobile ? 12 : 16,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                    <p
+                      style={{
+                        fontSize: isMobile ? "0.75rem" : "0.85rem",
+                        color: "#92400e",
+                        lineHeight: 1.6,
+                        margin: 0,
+                      }}
+                    >
+                      🔐 ログインすると、診断結果を保存して2回目以降の診断で前回の結果をベースに診断できます。
+                    </p>
+                    <Link
+                      href="/login"
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: 999,
+                        border: "1px solid #f59e0b",
+                        background: "#ffffff",
+                        color: "#f59e0b",
+                        fontSize: isMobile ? "0.7rem" : "0.75rem",
+                        fontWeight: 600,
+                        textDecoration: "none",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      ログイン
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 入力カード */}
           <section
             style={{
@@ -1220,9 +1528,10 @@ export default function Home() {
                       textAlign: "center",
                     }}
                   >
+                    <div style={{ marginBottom: 8 }}>職務経歴書を読み込んでいます…</div>
                     <div style={{ marginBottom: 8 }}>あなたの選択と経験を分析しています…</div>
                     <div style={{ marginBottom: 8 }}>C/L/Tバランスを計算中…</div>
-                    <div>おすすめの業種・趣味を生成中…</div>
+                    <div>おすすめの職種を生成中…</div>
                   </div>
                 </div>
               </>
@@ -1269,22 +1578,42 @@ export default function Home() {
                 >
                   あなたのタイプ分析（C / L / T 分布）
                 </h2>
-                <button
-                  type="button"
-                  onClick={handlePrintPdf}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: 999,
-                    border: "1px solid #c62828",
-                    background: "#ffffff",
-                    color: "#c62828",
-                    fontSize: isMobile ? "0.75rem" : "0.8rem",
-                    cursor: "pointer",
-                    fontWeight: 600,
-                  }}
-                >
-                  PDFとして保存
-                </button>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={saveAssessment}
+                    disabled={saving}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: 999,
+                      border: "1px solid #c62828",
+                      background: "#c62828",
+                      color: "#ffffff",
+                      fontSize: isMobile ? "0.75rem" : "0.8rem",
+                      cursor: saving ? "not-allowed" : "pointer",
+                      fontWeight: 600,
+                      opacity: saving ? 0.6 : 1,
+                    }}
+                  >
+                    {saving ? "保存中..." : "結果を保存"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePrintPdf}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: 999,
+                      border: "1px solid #c62828",
+                      background: "#ffffff",
+                      color: "#c62828",
+                      fontSize: isMobile ? "0.75rem" : "0.8rem",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                    }}
+                  >
+                    PDFとして保存
+                  </button>
+                </div>
               </div>
 
               <div
@@ -1311,9 +1640,9 @@ export default function Home() {
                       height: "100%",
                       borderRadius: "50%",
                       background: `conic-gradient(
-                        #e53935 0% ${cEnd}%,
-                        #ff7043 ${cEnd}% ${lEnd}%,
-                        #ffb74d ${lEnd}% ${tEnd}%
+                        #3b82f6 0% ${cEnd}%,
+                        #f43f5e ${cEnd}% ${lEnd}%,
+                        #10b981 ${lEnd}% ${tEnd}%
                       )`,
                       boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
                     }}
@@ -1368,13 +1697,13 @@ export default function Home() {
                           width: 12,
                           height: 12,
                           borderRadius: "50%",
-                          background: "#e53935",
+                          background: "#3b82f6",
                           marginRight: 10,
                           flexShrink: 0,
                         }}
                       />
-                      <span style={{ fontWeight: 600, marginRight: 6 }}>C（Communication）</span>
-                      <span style={{ color: "#c62828", fontWeight: 700 }}>{ratio.C}%</span>
+                      <span style={{ fontWeight: 600, marginRight: 6, color: "#2563eb" }}>C（Communication）</span>
+                      <span style={{ color: "#2563eb", fontWeight: 700 }}>{ratio.C}%</span>
                     </li>
                     <li style={{ marginBottom: 10, display: "flex", alignItems: "center" }}>
                       <span
@@ -1383,13 +1712,13 @@ export default function Home() {
                           width: 12,
                           height: 12,
                           borderRadius: "50%",
-                          background: "#ff7043",
+                          background: "#f43f5e",
                           marginRight: 10,
                           flexShrink: 0,
                         }}
                       />
-                      <span style={{ fontWeight: 600, marginRight: 6 }}>L（Leadership）</span>
-                      <span style={{ color: "#c62828", fontWeight: 700 }}>{ratio.L}%</span>
+                      <span style={{ fontWeight: 600, marginRight: 6, color: "#e11d48" }}>L（Leadership）</span>
+                      <span style={{ color: "#e11d48", fontWeight: 700 }}>{ratio.L}%</span>
                     </li>
                     <li style={{ marginBottom: 10, display: "flex", alignItems: "center" }}>
                       <span
@@ -1398,13 +1727,13 @@ export default function Home() {
                           width: 12,
                           height: 12,
                           borderRadius: "50%",
-                          background: "#ffb74d",
+                          background: "#10b981",
                           marginRight: 10,
                           flexShrink: 0,
                         }}
                       />
-                      <span style={{ fontWeight: 600, marginRight: 6 }}>T（Thinking）</span>
-                      <span style={{ color: "#c62828", fontWeight: 700 }}>{ratio.T}%</span>
+                      <span style={{ fontWeight: 600, marginRight: 6, color: "#059669" }}>T（Thinking）</span>
+                      <span style={{ color: "#059669", fontWeight: 700 }}>{ratio.T}%</span>
                     </li>
                   </ul>
 
@@ -1418,6 +1747,7 @@ export default function Home() {
                         borderRadius: 12,
                         padding: 12,
                         border: "1px solid #ffe0e0",
+                        color: "rgba(158, 36, 36, 1)",
                       }}
                     >
                       {analysis.clt_summary.tendency_text}
@@ -1478,8 +1808,21 @@ export default function Home() {
                           color: "#b71c1c",
                         }}
                       >
-                        {industry.name || industry.industry}
+                        {industry.name || industry.job || industry.industry}
                       </h4>
+                      {industry.description && (
+                        <p
+                          style={{
+                            fontSize: isMobile ? "0.72rem" : "0.78rem",
+                            marginTop: 6,
+                            marginBottom: 8,
+                            lineHeight: 1.6,
+                            color: "#555",
+                          }}
+                        >
+                          {industry.description}
+                        </p>
+                      )}
                       {(industry.reason || industry.why_fit) && (
                         <p
                           style={{
@@ -1625,7 +1968,8 @@ export default function Home() {
                       <article
                         style={{
                           ...cardStyle,
-                          background: "#fffdfd",
+                          background: "#eff6ff",
+                          border: "1px solid #bfdbfe",
                         }}
                       >
                         <h4
@@ -1633,7 +1977,7 @@ export default function Home() {
                             fontSize: isMobile ? "0.88rem" : "0.95rem",
                             fontWeight: 700,
                             marginBottom: 8,
-                            color: "#b71c1c",
+                            color: "#2563eb",
                           }}
                         >
                           C（Communication）を伸ばす
@@ -1665,7 +2009,8 @@ export default function Home() {
                       <article
                         style={{
                           ...cardStyle,
-                          background: "#fffdfd",
+                          background: "#fff1f2",
+                          border: "1px solid #fecdd3",
                         }}
                       >
                         <h4
@@ -1673,7 +2018,7 @@ export default function Home() {
                             fontSize: isMobile ? "0.88rem" : "0.95rem",
                             fontWeight: 700,
                             marginBottom: 8,
-                            color: "#b71c1c",
+                            color: "#e11d48",
                           }}
                         >
                           L（Leadership）を伸ばす
@@ -1705,7 +2050,8 @@ export default function Home() {
                       <article
                         style={{
                           ...cardStyle,
-                          background: "#fffdfd",
+                          background: "#ecfdf5",
+                          border: "1px solid #a7f3d0",
                         }}
                       >
                         <h4
@@ -1713,7 +2059,7 @@ export default function Home() {
                             fontSize: isMobile ? "0.88rem" : "0.95rem",
                             fontWeight: 700,
                             marginBottom: 8,
-                            color: "#b71c1c",
+                            color: "#059669",
                           }}
                         >
                           T（Thinking）を伸ばす
