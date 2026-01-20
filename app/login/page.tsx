@@ -211,3 +211,19 @@ function LoginForm() {
   );
 }
 
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-white px-5">
+        <div className="w-full max-w-md text-center">
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-gray-900">Lumipath</h1>
+            <p className="mt-2 text-sm text-gray-600">読み込み中...</p>
+          </div>
+        </div>
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
+  );
+}
