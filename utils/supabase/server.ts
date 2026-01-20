@@ -1,12 +1,18 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { getEnvConfig } from "@/lib/env";
+
+// ビルド時にエラーを出さないよう、環境変数を直接参照
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+// ビルドエラー回避のためのガード
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  console.warn("Supabase environment variables are missing.");
+}
 
 export async function createClient() {
-  const envConfig = getEnvConfig();
-
   // 環境変数が未設定の場合は警告を出して null を返す（使用側で適切にハンドリング）
-  if (!envConfig.isSupabaseEnabled) {
+  if (!supabaseUrl || !supabaseKey) {
     console.warn(
       "Supabase環境変数が設定されていません。保存機能は使用できません。"
     );
@@ -16,8 +22,8 @@ export async function createClient() {
   const cookieStore = await cookies();
 
   return createServerClient(
-    envConfig.supabaseUrl!,
-    envConfig.supabaseAnonKey!,
+    supabaseUrl,
+    supabaseKey,
     {
       cookies: {
         getAll() {

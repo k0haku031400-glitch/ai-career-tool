@@ -5,7 +5,11 @@ import { createClient } from "@/utils/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
-function LoginForm() {
+// 動的レンダリングを強制（プリレンダリングを回避）
+export const dynamic = 'force-dynamic';
+
+// useSearchParamsを使用する内部コンポーネント
+function LoginFormInner() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -223,7 +227,7 @@ export default function LoginPage() {
         </div>
       </div>
     }>
-      <LoginForm />
+      <LoginFormInner />
     </Suspense>
   );
 }
